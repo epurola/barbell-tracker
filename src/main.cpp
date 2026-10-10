@@ -1,6 +1,6 @@
 #include <Arduino.h>
 #include "runtime/RuntimeTasks.h"
-#ifndef UNIT_TEST
+
 void setup()
 {
     Serial.begin(115200);
@@ -35,4 +35,3 @@ void loop()
     delay(1000);
     Serial.println("Alive");
 }
-#endif // UNIT_TEST

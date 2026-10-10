@@ -5,15 +5,37 @@
 #include "common/Status.h"
 #include "common/Vector3.h"
 
-namespace
+namespace vbt
 {
-    struct RawimuSample
+    struct RawImuSample
     {
         uint64_t timestamp_us{0};
         uint32_t sequence{0};
 
-        Vector3 accelerometer{};
-        Vector3 gyroscope{};
+        vbt::Vector3 accelerometer{};
+        vbt::Vector3 gyroscope{};
+
+        SampleStatus status{SampleStatus::None};
+    };
+
+    struct CalibratedImuSample
+    {
+        uint64_t timestamp_us{0};
+        uint32_t sequence{0};
+
+        vbt::Vector3 accelerometer_mps2{};
+        vbt::Vector3 gyroscope_radps{};
+
+        SampleStatus status{SampleStatus::None};
+    };
+
+    struct FilteredimuSample
+    {
+        uint64_t timestamp_us{0};
+        uint32_t sequence{0};
+
+        vbt::Vector3 accelerometer_mps2{};
+        vbt::Vector3 gyroscope_radps{};
 
         SampleStatus status{SampleStatus::None};
     };

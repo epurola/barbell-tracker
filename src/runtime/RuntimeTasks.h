@@ -92,7 +92,7 @@ namespace vbt::runtime
         );
         if(acquisitionTaskHandle == nullptr) return false;
 
-         processingTaskHandle =xTaskCreateStaticPinnedToCore(
+         processingTaskHandle = xTaskCreateStaticPinnedToCore(
             processingTask,
             "processing",
             PROCESSING_STACK_BYTES,
