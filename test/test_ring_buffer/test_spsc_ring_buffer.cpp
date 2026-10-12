@@ -2,7 +2,7 @@
 #include <unity.h>
 
 #include "contracts/ImuTypes.h"
-#include "runtime/SpscRingBuffer.h"
+#include "runtime/SpscRingBuffer.cpp"
 
 using vbt::RawImuSample;
 using vbt::runtime::SpscRingBuffer;
