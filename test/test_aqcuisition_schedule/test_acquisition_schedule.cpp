@@ -1,10 +1,10 @@
 #include <unity.h>
+#include <Arduino.h>
 
 #include "config/RuntimeConfig.h"
 #include "runtime/AcquisitionSchedule.h"
 
 using namespace vbt::runtime;
-
 
 void test_period_is_2000_microseconds()
 {
@@ -35,6 +35,7 @@ void test_accumulated_notifications_count_missed_opportunities()
 
 void setup()
 {
+    delay(3000);
     UNITY_BEGIN();
 
     RUN_TEST(test_period_is_2000_microseconds);

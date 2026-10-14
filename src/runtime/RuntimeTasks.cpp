@@ -7,6 +7,7 @@
 
 #include "config/RuntimeConfig.h"
 #include "runtime/AcquisitionSchedule.h"
+#include "runtime/ImuSampleQueue.h"
 
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -157,6 +158,24 @@ namespace
                 static_cast<unsigned long>(
                     telemetryHeartbeat.load(
                         std::memory_order_relaxed)));
+
+            const UBaseType_t acquisitionStackHwm = acquisitionTaskHandle ? uxTaskGetStackHighWaterMark(acquisitionTaskHandle) : 0;
+            const UBaseType_t processingStackHwm = processingTaskHandle ? uxTaskGetStackHighWaterMark(processingTaskHandle) : 0;
+            const UBaseType_t telemetryStackHwm = telemetryTaskHandle ? uxTaskGetStackHighWaterMark(telemetryTaskHandle) : 0;
+
+            Serial.printf(
+                "[STACK] acquisition_hwm=%lu "
+                "processing_hwm=%lu telemetry_hwm=%lu\n",
+                static_cast<unsigned long>(acquisitionStackHwm),
+                static_cast<unsigned long>(processingStackHwm),
+                static_cast<unsigned long>(telemetryStackHwm));
+
+            Serial.printf(
+                "[QUEUE] raw_imu=%lu/%lu dropped=%lu\n",
+                static_cast<unsigned long>(rawImuQueue.sizeApprox()),
+                static_cast<unsigned long>(rawImuQueue.capacity()),
+                static_cast<unsigned long>(rawImuQueue.droppedCount()));
+
 
             vTaskDelay(pdMS_TO_TICKS(1000));
         }

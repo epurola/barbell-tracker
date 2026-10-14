@@ -1,8 +1,9 @@
 
 #include <unity.h>
+#include <Arduino.h>
 
 #include "contracts/ImuTypes.h"
-#include "runtime/SpscRingBuffer.cpp"
+#include "runtime/SpscRingBuffer.h"
 
 using vbt::RawImuSample;
 using vbt::runtime::SpscRingBuffer;
@@ -96,6 +97,7 @@ void test_queue_can_be_reused_after_pop()
 
 void setup()
 {
+    delay(3000);
     UNITY_BEGIN();
 
     RUN_TEST(test_empty_queue_returns_false);
