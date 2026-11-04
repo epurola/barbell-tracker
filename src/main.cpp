@@ -16,6 +16,20 @@ void setup()
 
      Serial.printf("setup running on Core %d\n", xPortGetCoreID());
 
+     Serial.println("initializing IMU...");
+
+     if(!vbt::runtime::initializeImu())
+     {
+        Serial.println("ERROR: LSM6DS3 initialization failed. Check I2C wiring, address, and sensor configuration.");
+
+        while(true)
+        {
+            delay(1000);
+        }
+     }
+
+     Serial.println("LSM6DS3 initialized successfully.");
+
      if (!vbt::runtime::startTasks())
      {
         Serial.println("ERROR: Failed to create runtime tasks");

@@ -1,6 +1,7 @@
 #include "runtime/RuntimeTasks.h"
 
 #include <Arduino.h>
+#include <Wire.h>
 #include <atomic>
 #include <cstdint>
 #include <climits>
@@ -12,6 +13,7 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "imu/Lsm6ds3.h"
 
 namespace 
 {
@@ -45,6 +47,11 @@ namespace
     std::atomic<uint32_t> maxWakeLatenessUs{0};
 
     uint64_t timerEpochUs = 0;
+
+    vbt::imu::Lsm6ds3 imuSensor{};
+    std::atomic<uint32_t> successfulImuSamples{0};
+    std::atomic<uint32_t> failedImuReads{0};
+
 
     // Runs in the ESP timer task context, not as an ISR.
     // Do not perform I/O or sensor transactions here.
@@ -84,7 +91,7 @@ namespace
 
            // Advance the sequence for every timer notification received.
            const uint32_t sequence = acquisitionSequence.fetch_add(notifications, std::memory_order_relaxed) + notifications;
-           const uint32_t scheduledDeadlineUs = acquisitionDeadlineUs(timerEpochUs, sequence, ACQUISITION_PERIOD_US);
+           const uint64_t scheduledDeadlineUs = acquisitionDeadlineUs(timerEpochUs, sequence, ACQUISITION_PERIOD_US);
            const uint64_t actualWakeUs = static_cast<uint64_t>(esp_timer_get_time());
            const uint64_t latenessUs = actualWakeUs > scheduledDeadlineUs ? actualWakeUs -scheduledDeadlineUs : 0;
            const uint64_t lateness32 = latenessUs > UINT32_MAX ? UINT32_MAX : static_cast<uint32_t>(latenessUs);
@@ -93,10 +100,19 @@ namespace
            updateMaximumLateness(lateness32);
            acquisitionHeartbeat.fetch_add(notifications, std::memory_order_relaxed);
 
-            // EPIC-2 will read the IMU and construct RawImuSample here.
-            // The timestamp above is the scheduled deadline. When the
-            // sensor is integrated, record the actual acquisition timestamp
-            // separately if needed.
+            vbt::RawImuSample sample{};
+
+            const uint64_t sampleTimestampsUs = static_cast<uint64_t>(esp_timer_get_time());
+
+            if(imuSensor.readSample(sample, sampleTimestampsUs, sequence))
+            {
+                successfulImuSamples.fetch_add(1, std::memory_order_relaxed);
+                (void)rawImuQueue.tryPush(sample);
+            }
+            else
+            {
+                failedImuReads.fetch_add(1, std::memory_order_relaxed);
+            }
 
         }
     }
@@ -176,6 +192,11 @@ namespace
                 static_cast<unsigned long>(rawImuQueue.capacity()),
                 static_cast<unsigned long>(rawImuQueue.droppedCount()));
 
+            Serial.printf(
+                "[IMU] samples_ok=%lu read_failures=%lu\n",
+                static_cast<unsigned long>(successfulImuSamples.load(std::memory_order_relaxed)),
+                static_cast<unsigned long>(failedImuReads.load(std::memory_order_relaxed)));
+
 
             vTaskDelay(pdMS_TO_TICKS(1000));
         }
@@ -185,6 +206,21 @@ namespace
 
 namespace vbt::runtime
 {
+
+    bool initializeImu()
+    {
+        //Initialize Arduino's default 12c pins for this board
+        Wire.begin();
+
+        // The sensor and touch controller share this bus.
+        // Use 400 kHz for the acquisition workload
+        Wire.setClock(400000);
+
+        if(!imuSensor.begin(Wire)) return false;
+
+        return true;
+    }
+
     bool startTasks()
     {
         acquisitionTaskHandle = xTaskCreateStaticPinnedToCore(

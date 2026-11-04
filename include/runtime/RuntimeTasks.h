@@ -2,12 +2,10 @@
 
 namespace vbt::runtime
 {
-    /**
-    * Initializes and starts the application FreeRTOS task architecture.
-    *
-    * Tasks are statically allocated and pinned to their designated cores.
-    *
-    * Returns true if all application tasks were created successfully.
-    */
+    // Initialize the shared I2C bus and verify/configure the IMU.
+    // Must succeed before starting the runtime tasks.
+    bool initializeImu();
+
+    // Initializes and starts the application FreeRTOS task architecture.
     bool startTasks();
 }
