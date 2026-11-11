@@ -1,10 +1,9 @@
 #include <Arduino.h>
 #include "runtime/RuntimeTasks.h"
+#include "runtime/RuntimeTasks.h"
 
 void setup()
 {
-    Serial.begin(115200);
-
     Serial.begin(115200);
 
     delay(1000);

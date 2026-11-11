@@ -46,6 +46,11 @@ namespace
     std::atomic<uint32_t> lastWakeLatenessUs{0};
     std::atomic<uint32_t> maxWakeLatenessUs{0};
 
+    std::atomic<uint32_t> processedSamples{0};
+    std::atomic<uint32_t> invalidSamples{0};
+    std::atomic<uint32_t> processingSequenceGaps{0};
+    std::atomic<uint32_t> lastProcessedSequence{0};
+
     uint64_t timerEpochUs = 0;
 
     vbt::imu::Lsm6ds3 imuSensor{};
@@ -119,12 +124,52 @@ namespace
 
     void processingTask(void* /*parameter*/)
     {
-        processingCore = xPortGetCoreID();
+        processingCore.store(xPortGetCoreID(), std::memory_order_relaxed);
+ 
+        uint32_t expectedSequence = 0;
+        bool havePreviousSequence = false;
 
         for (;;)
         {
+            vbt::RawImuSample sample{};
+
+            bool receivedAny = false;
+
+            //Drain all currently available samples
+            while(rawImuQueue.tryPop(sample))
+            {
+                receivedAny = true;
+                const bool valid = 
+                    vbt::hasStatus(sample.status, vbt::SampleStatus::Valid) &&
+                    vbt::hasStatus(sample.status, vbt::SampleStatus::AccelorometerOk) &&
+                    vbt::hasStatus(sample.status, vbt::SampleStatus::GyroscopeOk) &&
+                    vbt::hasStatus(sample.status, vbt::SampleStatus::TimestampValid) &&
+                    vbt::hasStatus(sample.status, vbt::SampleStatus::SequenceValid);
+
+                if(!valid)
+                {
+                    invalidSamples.fetch_add(1, std::memory_order_relaxed);
+                    continue;
+                }
+
+                //Detect sequence discontinuities between samples
+                if(havePreviousSequence && sample.sequence != expectedSequence)
+                {
+                    processingSequenceGaps.fetch_add(sample.sequence - expectedSequence, std::memory_order_relaxed);
+                }
+
+                expectedSequence = sample.sequence + 1;
+                havePreviousSequence = true;
+
+                lastProcessedSequence.store(sample.sequence, std::memory_order_relaxed);
+                processedSamples.fetch_add(1, std::memory_order_relaxed);
+              
+            }
             processingHeartbeat.fetch_add(1, std::memory_order_relaxed);
-            vTaskDelay(pdMS_TO_TICKS(1000));
+            if(!receivedAny)
+            {
+                vTaskDelay(pdMS_TO_TICKS(1));
+            }
         }
     }
 
@@ -197,6 +242,12 @@ namespace
                 static_cast<unsigned long>(successfulImuSamples.load(std::memory_order_relaxed)),
                 static_cast<unsigned long>(failedImuReads.load(std::memory_order_relaxed)));
 
+            Serial.printf(
+                "[PROCESS] processed=%lu invalid=%lu " "sequence_gaps=%lu last_sequence=%lu\n",
+                static_cast<unsigned long>(processedSamples.load(std::memory_order_relaxed)),
+                static_cast<unsigned long>(invalidSamples.load(std::memory_order_relaxed)),
+                static_cast<unsigned long>(processingSequenceGaps.load(std::memory_order_relaxed)),
+                static_cast<unsigned long>(lastProcessedSequence.load(std::memory_order_relaxed)));
 
             vTaskDelay(pdMS_TO_TICKS(1000));
         }
