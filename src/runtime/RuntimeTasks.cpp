@@ -131,6 +131,7 @@ namespace
 
         for (;;)
         {
+            
             vbt::RawImuSample sample{};
 
             bool receivedAny = false;
@@ -165,11 +166,14 @@ namespace
                 processedSamples.fetch_add(1, std::memory_order_relaxed);
               
             }
+
             processingHeartbeat.fetch_add(1, std::memory_order_relaxed);
+
             if(!receivedAny)
             {
                 vTaskDelay(pdMS_TO_TICKS(1));
             }
+
         }
     }
 
@@ -194,31 +198,17 @@ namespace
                 "last_lateness=%lu us max_lateness=%lu us\n",
                 static_cast<unsigned long>(ACQUISITION_RATE_HZ),
                 static_cast<unsigned long long>(ACQUISITION_PERIOD_US),
-                static_cast<unsigned long>(
-                    acquisitionSequence.load(
-                        std::memory_order_relaxed)),
-                static_cast<unsigned long>(
-                    missedDeadlineCount.load(
-                        std::memory_order_relaxed)),
-                static_cast<unsigned long>(
-                    lastWakeLatenessUs.load(
-                        std::memory_order_relaxed)),
-                static_cast<unsigned long>(
-                    maxWakeLatenessUs.load(
-                        std::memory_order_relaxed)));
+                static_cast<unsigned long>(acquisitionSequence.load(std::memory_order_relaxed)),
+                static_cast<unsigned long>(missedDeadlineCount.load(std::memory_order_relaxed)),
+                static_cast<unsigned long>(lastWakeLatenessUs.load(std::memory_order_relaxed)),
+                static_cast<unsigned long>(maxWakeLatenessUs.load(std::memory_order_relaxed)));
                 
                 Serial.printf(
                 "[HEARTBEAT] acquisition=%lu processing=%lu "
                 "telemetry=%lu\n",
-                static_cast<unsigned long>(
-                    acquisitionHeartbeat.load(
-                        std::memory_order_relaxed)),
-                static_cast<unsigned long>(
-                    processingHeartbeat.load(
-                        std::memory_order_relaxed)),
-                static_cast<unsigned long>(
-                    telemetryHeartbeat.load(
-                        std::memory_order_relaxed)));
+                static_cast<unsigned long>(acquisitionHeartbeat.load(std::memory_order_relaxed)),
+                static_cast<unsigned long>(processingHeartbeat.load(std::memory_order_relaxed)),
+                static_cast<unsigned long>(telemetryHeartbeat.load(std::memory_order_relaxed)));
 
             const UBaseType_t acquisitionStackHwm = acquisitionTaskHandle ? uxTaskGetStackHighWaterMark(acquisitionTaskHandle) : 0;
             const UBaseType_t processingStackHwm = processingTaskHandle ? uxTaskGetStackHighWaterMark(processingTaskHandle) : 0;
