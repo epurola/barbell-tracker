@@ -177,6 +177,8 @@ namespace
         }
     }
 
+    #define SC(x) static_cast<unsigned long>(x)
+    
     void telemetryTask(void*)
     {
         telemetryCore.store(xPortGetCoreID(), std::memory_order_relaxed);
@@ -185,59 +187,23 @@ namespace
         {
             telemetryHeartbeat.fetch_add(1, std::memory_order_relaxed);
 
-            Serial.printf(
-                "[RUNTIME] cores acquisition=%d processing=%d "
-                "telemetry=%d\n",
+            Serial.printf("[RUNTIME] cores acquisition=%d processing=%d telemetry=%d\n",
                 acquisitionCore.load(std::memory_order_relaxed),
                 processingCore.load(std::memory_order_relaxed),
                 telemetryCore.load(std::memory_order_relaxed));
             
-                Serial.printf(
-                "[ACQ] target=%lu Hz period=%llu us "
-                "sequence=%lu missed_notifications=%lu "
-                "last_lateness=%lu us max_lateness=%lu us\n",
-                static_cast<unsigned long>(ACQUISITION_RATE_HZ),
-                static_cast<unsigned long long>(ACQUISITION_PERIOD_US),
-                static_cast<unsigned long>(acquisitionSequence.load(std::memory_order_relaxed)),
-                static_cast<unsigned long>(missedDeadlineCount.load(std::memory_order_relaxed)),
-                static_cast<unsigned long>(lastWakeLatenessUs.load(std::memory_order_relaxed)),
-                static_cast<unsigned long>(maxWakeLatenessUs.load(std::memory_order_relaxed)));
+            Serial.printf("[ACQ] target=%lu Hz period=%llu us sequence=%lu missed_notifications=%lu last_lateness=%lu us max_lateness=%lu us\n", SC(ACQUISITION_RATE_HZ), static_cast<unsigned long long>(ACQUISITION_PERIOD_US), SC(acquisitionSequence.load(std::memory_order_relaxed)), SC(missedDeadlineCount.load(std::memory_order_relaxed)), SC(lastWakeLatenessUs.load(std::memory_order_relaxed)),SC(maxWakeLatenessUs.load(std::memory_order_relaxed)));
                 
-                Serial.printf(
-                "[HEARTBEAT] acquisition=%lu processing=%lu "
-                "telemetry=%lu\n",
-                static_cast<unsigned long>(acquisitionHeartbeat.load(std::memory_order_relaxed)),
-                static_cast<unsigned long>(processingHeartbeat.load(std::memory_order_relaxed)),
-                static_cast<unsigned long>(telemetryHeartbeat.load(std::memory_order_relaxed)));
+            Serial.printf("[HEARTBEAT] acquisition=%lu processing=%lu telemetry=%lu\n", SC(acquisitionHeartbeat.load(std::memory_order_relaxed)), SC(processingHeartbeat.load(std::memory_order_relaxed)), SC(telemetryHeartbeat.load(std::memory_order_relaxed)));
 
             const UBaseType_t acquisitionStackHwm = acquisitionTaskHandle ? uxTaskGetStackHighWaterMark(acquisitionTaskHandle) : 0;
             const UBaseType_t processingStackHwm = processingTaskHandle ? uxTaskGetStackHighWaterMark(processingTaskHandle) : 0;
             const UBaseType_t telemetryStackHwm = telemetryTaskHandle ? uxTaskGetStackHighWaterMark(telemetryTaskHandle) : 0;
 
-            Serial.printf(
-                "[STACK] acquisition_hwm=%lu "
-                "processing_hwm=%lu telemetry_hwm=%lu\n",
-                static_cast<unsigned long>(acquisitionStackHwm),
-                static_cast<unsigned long>(processingStackHwm),
-                static_cast<unsigned long>(telemetryStackHwm));
-
-            Serial.printf(
-                "[QUEUE] raw_imu=%lu/%lu dropped=%lu\n",
-                static_cast<unsigned long>(rawImuQueue.sizeApprox()),
-                static_cast<unsigned long>(rawImuQueue.capacity()),
-                static_cast<unsigned long>(rawImuQueue.droppedCount()));
-
-            Serial.printf(
-                "[IMU] samples_ok=%lu read_failures=%lu\n",
-                static_cast<unsigned long>(successfulImuSamples.load(std::memory_order_relaxed)),
-                static_cast<unsigned long>(failedImuReads.load(std::memory_order_relaxed)));
-
-            Serial.printf(
-                "[PROCESS] processed=%lu invalid=%lu " "sequence_gaps=%lu last_sequence=%lu\n",
-                static_cast<unsigned long>(processedSamples.load(std::memory_order_relaxed)),
-                static_cast<unsigned long>(invalidSamples.load(std::memory_order_relaxed)),
-                static_cast<unsigned long>(processingSequenceGaps.load(std::memory_order_relaxed)),
-                static_cast<unsigned long>(lastProcessedSequence.load(std::memory_order_relaxed)));
+            Serial.printf("[STACK] acquisition_hwm=%lu processing_hwm=%lu telemetry_hwm=%lu\n",SC(acquisitionStackHwm), SC(processingStackHwm), SC(telemetryStackHwm));
+            Serial.printf("[QUEUE] raw_imu=%lu/%lu dropped=%lu\n", SC(rawImuQueue.sizeApprox()), SC(rawImuQueue.capacity()), SC(rawImuQueue.droppedCount()));
+            Serial.printf("[IMU] samples_ok=%lu read_failures=%lu\n", SC(successfulImuSamples.load(std::memory_order_relaxed)), SC(failedImuReads.load(std::memory_order_relaxed)));
+            Serial.printf("[PROCESS] processed=%lu invalid=%lu sequence_gaps=%lu last_sequence=%lu\n", SC(processedSamples.load(std::memory_order_relaxed)), SC(invalidSamples.load(std::memory_order_relaxed)), SC(processingSequenceGaps.load(std::memory_order_relaxed)), SC(lastProcessedSequence.load(std::memory_order_relaxed)));
 
             vTaskDelay(pdMS_TO_TICKS(1000));
         }
@@ -264,41 +230,14 @@ namespace vbt::runtime
 
     bool startTasks()
     {
-        acquisitionTaskHandle = xTaskCreateStaticPinnedToCore(
-                acquisitionTask,
-                "acquisition",
-                ACQUISITION_STACK_BYTES,
-                nullptr,
-                ACQUISITION_PRIORITY,
-                acquisitionTaskStack,
-                &acquisitionTaskControlBlock,
-                ACQUISITION_CORE
-        );
+        acquisitionTaskHandle = xTaskCreateStaticPinnedToCore(acquisitionTask, "acquisition", ACQUISITION_STACK_BYTES, nullptr, ACQUISITION_PRIORITY, acquisitionTaskStack, &acquisitionTaskControlBlock, ACQUISITION_CORE);
         if(acquisitionTaskHandle == nullptr) return false;
 
-         processingTaskHandle = xTaskCreateStaticPinnedToCore(
-            processingTask,
-            "processing",
-            PROCESSING_STACK_BYTES,
-            nullptr,
-            PROCESSING_PRIORITY,
-            processingTaskStack,
-            &processingTaskControlBlock,
-            PROCESSING_CORE
-        );
+         processingTaskHandle = xTaskCreateStaticPinnedToCore( processingTask, "processing", PROCESSING_STACK_BYTES, nullptr, PROCESSING_PRIORITY, processingTaskStack, &processingTaskControlBlock, PROCESSING_CORE);
         if (processingTaskHandle == nullptr) return false;
 
 
-        telemetryTaskHandle = xTaskCreateStaticPinnedToCore(
-            telemetryTask,
-            "telemetry",
-            TELEMETRY_STACK_BYTES,
-            nullptr,
-            TELEMETRY_PRIORITY,
-            telemetryTaskStack,
-            &telemetryTaskControlBlock,
-            TELEMETRY_CORE
-        );
+        telemetryTaskHandle = xTaskCreateStaticPinnedToCore(telemetryTask, "telemetry", TELEMETRY_STACK_BYTES, nullptr, TELEMETRY_PRIORITY, telemetryTaskStack, &telemetryTaskControlBlock, TELEMETRY_CORE);
         if (telemetryTaskHandle == nullptr) return false;
 
         esp_timer_create_args_t timerArgs{};
