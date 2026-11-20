@@ -29,7 +29,7 @@ namespace vbt
         SampleStatus status{SampleStatus::None};
     };
 
-    struct FilteredimuSample
+    struct FilteredImuSample
     {
         uint64_t timestamp_us{0};
         uint32_t sequence{0};

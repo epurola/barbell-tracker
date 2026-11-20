@@ -13,7 +13,7 @@ namespace vbt
         TimestampValid   = 1u << 3, 
         SequenceValid    = 1u << 4,
         Calibrated       = 1u << 5,
-        Filterted        = 1u << 6,
+        Filtered         = 1u << 6,
         OrientationValid = 1u << 7,
     };
 

@@ -14,6 +14,9 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "imu/Lsm6ds3.h"
+#include "processing/ImuCalibration.h"
+#include "processing/ImuFilter.h"
+#include "processing/OrientationEstimator.h"
 
 namespace 
 {
@@ -56,6 +59,13 @@ namespace
     vbt::imu::Lsm6ds3 imuSensor{};
     std::atomic<uint32_t> successfulImuSamples{0};
     std::atomic<uint32_t> failedImuReads{0};
+    std::atomic<uint32_t> calibrationSamples{0};
+    std::atomic<uint32_t> calibratedSamples{0};
+    std::atomic<uint32_t> calibrationFailures{0};
+    std::atomic<uint32_t> filteredSamples{0};
+    std::atomic<uint32_t> filterFailures{0};
+    std::atomic<uint32_t> orientationSamples{0};
+    std::atomic<uint32_t> orientationFailures{0};
 
 
     // Runs in the ESP timer task context, not as an ISR.
@@ -128,6 +138,9 @@ namespace
  
         uint32_t expectedSequence = 0;
         bool havePreviousSequence = false;
+        vbt::processing::ImuCalibrator calibrator;
+        vbt::processing::ImuFilter imuFilter;
+        vbt::processing::OrientationEstimator orientationEstimator;
 
         for (;;)
         {
@@ -140,12 +153,7 @@ namespace
             while(rawImuQueue.tryPop(sample))
             {
                 receivedAny = true;
-                const bool valid = 
-                    vbt::hasStatus(sample.status, vbt::SampleStatus::Valid) &&
-                    vbt::hasStatus(sample.status, vbt::SampleStatus::AccelorometerOk) &&
-                    vbt::hasStatus(sample.status, vbt::SampleStatus::GyroscopeOk) &&
-                    vbt::hasStatus(sample.status, vbt::SampleStatus::TimestampValid) &&
-                    vbt::hasStatus(sample.status, vbt::SampleStatus::SequenceValid);
+                const bool valid =  vbt::hasStatus(sample.status, vbt::SampleStatus::Valid) && vbt::hasStatus(sample.status, vbt::SampleStatus::AccelorometerOk) && vbt::hasStatus(sample.status, vbt::SampleStatus::GyroscopeOk) && vbt::hasStatus(sample.status, vbt::SampleStatus::TimestampValid) && vbt::hasStatus(sample.status, vbt::SampleStatus::SequenceValid);
 
                 if(!valid)
                 {
@@ -164,7 +172,56 @@ namespace
 
                 lastProcessedSequence.store(sample.sequence, std::memory_order_relaxed);
                 processedSamples.fetch_add(1, std::memory_order_relaxed);
-              
+
+                if(calibrator.state() == vbt::processing::ImuCalibrator::State::Collecting)
+                {
+                    calibrationSamples.fetch_add(1, std::memory_order_relaxed);
+
+                    const bool completed = calibrator.collect(sample);
+
+                    if(completed) Serial.println("[CALIBRATION] Complete");
+
+                    if (calibrator.state() ==vbt::processing::ImuCalibrator::State::Failed)
+                    {
+                        calibrationFailures.fetch_add(1,std::memory_order_relaxed);
+                        Serial.println("[CALIBRATION] Failed: sensor was not stationary");
+                    }
+                    continue;
+                }
+
+                if(calibrator.state() == vbt::processing::ImuCalibrator::State::Ready)
+                {
+                    vbt::CalibratedImuSample calibrated{};
+
+                    if (calibrator.apply(sample, calibrated))
+                    {
+                        calibratedSamples.fetch_add(1, std::memory_order_relaxed);
+
+                        vbt::FilteredImuSample filtered{};
+
+                        if(imuFilter.process(calibrated, filtered))
+                        {
+                            filteredSamples.fetch_add(1, std::memory_order_relaxed);
+                             vbt::OrientationState orientation{};
+
+                             if (orientationEstimator.update(filtered, orientation))
+                            {
+                                    orientationSamples.fetch_add(1, std::memory_order_relaxed);
+                                    // Next ticket: world-frame kinematics.
+                            }
+                            else
+                            {
+                                orientationFailures.fetch_add(1, std::memory_order_relaxed);
+                            }
+                        }
+                        else
+                        {
+                            filterFailures.fetch_add(1, std::memory_order_relaxed);
+                        }
+
+                    }
+                }
+
             }
 
             processingHeartbeat.fetch_add(1, std::memory_order_relaxed);
@@ -204,6 +261,9 @@ namespace
             Serial.printf("[QUEUE] raw_imu=%lu/%lu dropped=%lu\n", SC(rawImuQueue.sizeApprox()), SC(rawImuQueue.capacity()), SC(rawImuQueue.droppedCount()));
             Serial.printf("[IMU] samples_ok=%lu read_failures=%lu\n", SC(successfulImuSamples.load(std::memory_order_relaxed)), SC(failedImuReads.load(std::memory_order_relaxed)));
             Serial.printf("[PROCESS] processed=%lu invalid=%lu sequence_gaps=%lu last_sequence=%lu\n", SC(processedSamples.load(std::memory_order_relaxed)), SC(invalidSamples.load(std::memory_order_relaxed)), SC(processingSequenceGaps.load(std::memory_order_relaxed)), SC(lastProcessedSequence.load(std::memory_order_relaxed)));
+            Serial.printf("[CALIBRATION] collected=%lu calibrated=%lu failures=%lu\n", SC(calibrationSamples.load(std::memory_order_relaxed)), SC(calibratedSamples.load(std::memory_order_relaxed)), SC(calibrationFailures.load(std::memory_order_relaxed)));
+            Serial.printf("[FILTER] filtered=%lu failures=%lu\n", SC(filteredSamples.load(std::memory_order_relaxed)), SC(filterFailures.load(std::memory_order_relaxed)));
+            Serial.printf("[ORIENTATION] valid=%lu failures=%lu\n", SC(orientationSamples.load(std::memory_order_relaxed)), SC(orientationFailures.load(std::memory_order_relaxed)));
 
             vTaskDelay(pdMS_TO_TICKS(1000));
         }

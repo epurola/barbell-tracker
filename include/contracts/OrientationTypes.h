@@ -6,7 +6,7 @@
 
 namespace vbt
 {
-    struct Quaterion
+    struct Quaternion
     {
         float w{1.0f};
         float x{0.0f};
@@ -25,7 +25,7 @@ namespace vbt
         uint64_t timestamp_us{0};
         uint32_t sequence{0};
 
-        Quaterion body_to_world{};
+        Quaternion body_to_world{};
 
         SampleStatus status{SampleStatus::None};
     };
