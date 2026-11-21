@@ -100,6 +100,8 @@ namespace
         kinematicFailures.store(counters.kinematicFailures, std::memory_order_relaxed);
     }
 
+    // Pinned to Core 1 (ACQUISITION_CORE, Priority 5).
+    // Dedicated real-time 500 Hz sensor polling task.
     void acquisitionTask(void* /*parameter*/)
     {
         acquisitionCore.store(xPortGetCoreID(), std::memory_order_relaxed);
@@ -142,6 +144,8 @@ namespace
         }
     }
 
+    // Pinned to Core 0 (PROCESSING_CORE, Priority 4).
+    // Drains raw samples from the SPSC queue and runs the IMU processing pipeline.
     void processingTask(void* /*parameter*/)
     {
         processingCore.store(xPortGetCoreID(), std::memory_order_relaxed);
@@ -185,6 +189,8 @@ namespace
 
     #define SC(x) static_cast<unsigned long>(x)
 
+    // Pinned to Core 0 (TELEMETRY_CORE, Priority 2).
+    // Prints 1 Hz diagnostic telemetry snapshots over Serial.
     void telemetryTask(void*)
     {
         telemetryCore.store(xPortGetCoreID(), std::memory_order_relaxed);
