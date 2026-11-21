@@ -15,6 +15,7 @@ namespace vbt
         Calibrated       = 1u << 5,
         Filtered         = 1u << 6,
         OrientationValid = 1u << 7,
+        KinematicsValid  = 1u << 8
     };
 
     constexpr SampleStatus operator | (SampleStatus lhs, SampleStatus rhs)

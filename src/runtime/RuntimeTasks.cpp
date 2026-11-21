@@ -4,23 +4,19 @@
 #include <Wire.h>
 #include <atomic>
 #include <cstdint>
-#include <climits>
 
 #include "config/RuntimeConfig.h"
-#include "runtime/AcquisitionSchedule.h"
-#include "runtime/ImuSampleQueue.h"
-
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "imu/Lsm6ds3.h"
-#include "processing/ImuCalibration.h"
-#include "processing/ImuFilter.h"
-#include "processing/OrientationEstimator.h"
+#include "processing/ImuPipeline.h"
+#include "runtime/AcquisitionSchedule.h"
+#include "runtime/ImuSampleQueue.h"
 
-namespace 
+namespace
 {
-    using namespace vbt::runtime; 
+    using namespace vbt::runtime;
 
     StaticTask_t acquisitionTaskControlBlock;
     StaticTask_t processingTaskControlBlock;
@@ -66,7 +62,8 @@ namespace
     std::atomic<uint32_t> filterFailures{0};
     std::atomic<uint32_t> orientationSamples{0};
     std::atomic<uint32_t> orientationFailures{0};
-
+    std::atomic<uint32_t> kinematicSamples{0};
+    std::atomic<uint32_t> kinematicFailures{0};
 
     // Runs in the ESP timer task context, not as an ISR.
     // Do not perform I/O or sensor transactions here.
@@ -74,7 +71,7 @@ namespace
     {
         TaskHandle_t handle = acquisitionTaskHandle;
 
-        if(handle == nullptr) return;
+        if (handle == nullptr) return;
 
         xTaskNotifyGive(handle);
     }
@@ -83,43 +80,57 @@ namespace
     {
         uint32_t previous = maxWakeLatenessUs.load(std::memory_order_relaxed);
 
-        while(value > previous && !maxWakeLatenessUs.compare_exchange_weak(previous, value, std::memory_order_relaxed,std::memory_order_relaxed))
-        {   
-        }
+        while (value > previous && !maxWakeLatenessUs.compare_exchange_weak( previous, value, std::memory_order_relaxed, std::memory_order_relaxed)) {}
+    }
+
+    void publishPipelineCounters(const vbt::processing::PipelineCounters& counters)
+    {
+        processedSamples.store(counters.processedSamples, std::memory_order_relaxed);
+        invalidSamples.store(counters.invalidSamples, std::memory_order_relaxed);
+        processingSequenceGaps.store(counters.sequenceGaps, std::memory_order_relaxed);
+        lastProcessedSequence.store(counters.lastSequence, std::memory_order_relaxed);
+        calibrationSamples.store(counters.calibrationSamples, std::memory_order_relaxed);
+        calibratedSamples.store(counters.calibratedSamples, std::memory_order_relaxed);
+        calibrationFailures.store(counters.calibrationFailures, std::memory_order_relaxed);
+        filteredSamples.store(counters.filteredSamples, std::memory_order_relaxed);
+        filterFailures.store(counters.filterFailures, std::memory_order_relaxed);
+        orientationSamples.store(counters.orientationSamples, std::memory_order_relaxed);
+        orientationFailures.store(counters.orientationFailures, std::memory_order_relaxed);
+        kinematicSamples.store(counters.kinematicSamples, std::memory_order_relaxed);
+        kinematicFailures.store(counters.kinematicFailures, std::memory_order_relaxed);
     }
 
     void acquisitionTask(void* /*parameter*/)
     {
-
         acquisitionCore.store(xPortGetCoreID(), std::memory_order_relaxed);
 
-        for(;;)
+        for (;;)
         {
-           // Block until one or more periodic timer notifications arrive.
-           const uint32_t notifications = ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+            // Block until one or more periodic timer notifications arrive.
+            const uint32_t notifications = ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
-           if(notifications == 0) continue;
+            if (notifications == 0) continue;
 
-           const uint32_t missed = missedNotifications(notifications);
+            const uint32_t missed = missedNotifications(notifications);
 
-           if(missed > 0) missedDeadlineCount.fetch_add(missed, std::memory_order_relaxed);
+            if (missed > 0) missedDeadlineCount.fetch_add(missed, std::memory_order_relaxed);
 
-           // Advance the sequence for every timer notification received.
-           const uint32_t sequence = acquisitionSequence.fetch_add(notifications, std::memory_order_relaxed) + notifications;
-           const uint64_t scheduledDeadlineUs = acquisitionDeadlineUs(timerEpochUs, sequence, ACQUISITION_PERIOD_US);
-           const uint64_t actualWakeUs = static_cast<uint64_t>(esp_timer_get_time());
-           const uint64_t latenessUs = actualWakeUs > scheduledDeadlineUs ? actualWakeUs -scheduledDeadlineUs : 0;
-           const uint64_t lateness32 = latenessUs > UINT32_MAX ? UINT32_MAX : static_cast<uint32_t>(latenessUs);
+            // Advance the sequence for every timer notification received.
+            const uint32_t sequence = acquisitionSequence.fetch_add(notifications, std::memory_order_relaxed) + notifications;
+            const uint64_t scheduledDeadlineUs = acquisitionDeadlineUs(timerEpochUs, sequence, ACQUISITION_PERIOD_US);
+            const uint64_t actualWakeUs = static_cast<uint64_t>(esp_timer_get_time());
+            const uint64_t latenessUs = actualWakeUs > scheduledDeadlineUs ? actualWakeUs - scheduledDeadlineUs : 0;
+            const uint32_t lateness32 = latenessUs > UINT32_MAX ? UINT32_MAX : static_cast<uint32_t>(latenessUs);
 
-           lastWakeLatenessUs.store(lateness32, std::memory_order_relaxed);
-           updateMaximumLateness(lateness32);
-           acquisitionHeartbeat.fetch_add(notifications, std::memory_order_relaxed);
+            lastWakeLatenessUs.store(lateness32, std::memory_order_relaxed);
+            updateMaximumLateness(lateness32);
+            acquisitionHeartbeat.fetch_add(notifications, std::memory_order_relaxed);
 
             vbt::RawImuSample sample{};
 
             const uint64_t sampleTimestampsUs = static_cast<uint64_t>(esp_timer_get_time());
 
-            if(imuSensor.readSample(sample, sampleTimestampsUs, sequence))
+            if (imuSensor.readSample(sample, sampleTimestampsUs, sequence))
             {
                 successfulImuSamples.fetch_add(1, std::memory_order_relaxed);
                 (void)rawImuQueue.tryPush(sample);
@@ -128,162 +139,94 @@ namespace
             {
                 failedImuReads.fetch_add(1, std::memory_order_relaxed);
             }
-
         }
     }
 
     void processingTask(void* /*parameter*/)
     {
         processingCore.store(xPortGetCoreID(), std::memory_order_relaxed);
- 
-        uint32_t expectedSequence = 0;
-        bool havePreviousSequence = false;
-        vbt::processing::ImuCalibrator calibrator;
-        vbt::processing::ImuFilter imuFilter;
-        vbt::processing::OrientationEstimator orientationEstimator;
+
+        vbt::processing::ImuPipeline pipeline{};
+        auto previousCalState = pipeline.calibrationState();
 
         for (;;)
         {
-            
             vbt::RawImuSample sample{};
-
             bool receivedAny = false;
 
-            //Drain all currently available samples
-            while(rawImuQueue.tryPop(sample))
+            // Drain all currently available samples
+            while (rawImuQueue.tryPop(sample))
             {
                 receivedAny = true;
-                const bool valid =  vbt::hasStatus(sample.status, vbt::SampleStatus::Valid) && vbt::hasStatus(sample.status, vbt::SampleStatus::AccelorometerOk) && vbt::hasStatus(sample.status, vbt::SampleStatus::GyroscopeOk) && vbt::hasStatus(sample.status, vbt::SampleStatus::TimestampValid) && vbt::hasStatus(sample.status, vbt::SampleStatus::SequenceValid);
 
-                if(!valid)
+                vbt::KinematicSample kinematics{};
+                if (pipeline.process(sample, kinematics))
                 {
-                    invalidSamples.fetch_add(1, std::memory_order_relaxed);
-                    continue;
+                    // Next stage: route `kinematics` into the active mode analyzer.
                 }
 
-                //Detect sequence discontinuities between samples
-                if(havePreviousSequence && sample.sequence != expectedSequence)
+                const auto currentCalState = pipeline.calibrationState();
+                if (currentCalState != previousCalState)
                 {
-                    processingSequenceGaps.fetch_add(sample.sequence - expectedSequence, std::memory_order_relaxed);
+                    if (currentCalState == vbt::processing::ImuCalibrator::State::Ready)       Serial.println("[CALIBRATION] Complete");
+                    else if (currentCalState == vbt::processing::ImuCalibrator::State::Failed) Serial.println("[CALIBRATION] Failed: sensor was not stationary");
+                    previousCalState = currentCalState;
                 }
-
-                expectedSequence = sample.sequence + 1;
-                havePreviousSequence = true;
-
-                lastProcessedSequence.store(sample.sequence, std::memory_order_relaxed);
-                processedSamples.fetch_add(1, std::memory_order_relaxed);
-
-                if(calibrator.state() == vbt::processing::ImuCalibrator::State::Collecting)
-                {
-                    calibrationSamples.fetch_add(1, std::memory_order_relaxed);
-
-                    const bool completed = calibrator.collect(sample);
-
-                    if(completed) Serial.println("[CALIBRATION] Complete");
-
-                    if (calibrator.state() ==vbt::processing::ImuCalibrator::State::Failed)
-                    {
-                        calibrationFailures.fetch_add(1,std::memory_order_relaxed);
-                        Serial.println("[CALIBRATION] Failed: sensor was not stationary");
-                    }
-                    continue;
-                }
-
-                if(calibrator.state() == vbt::processing::ImuCalibrator::State::Ready)
-                {
-                    vbt::CalibratedImuSample calibrated{};
-
-                    if (calibrator.apply(sample, calibrated))
-                    {
-                        calibratedSamples.fetch_add(1, std::memory_order_relaxed);
-
-                        vbt::FilteredImuSample filtered{};
-
-                        if(imuFilter.process(calibrated, filtered))
-                        {
-                            filteredSamples.fetch_add(1, std::memory_order_relaxed);
-                             vbt::OrientationState orientation{};
-
-                             if (orientationEstimator.update(filtered, orientation))
-                            {
-                                    orientationSamples.fetch_add(1, std::memory_order_relaxed);
-                                    // Next ticket: world-frame kinematics.
-                            }
-                            else
-                            {
-                                orientationFailures.fetch_add(1, std::memory_order_relaxed);
-                            }
-                        }
-                        else
-                        {
-                            filterFailures.fetch_add(1, std::memory_order_relaxed);
-                        }
-
-                    }
-                }
-
             }
 
+            if (receivedAny) publishPipelineCounters(pipeline.counters());
+            
             processingHeartbeat.fetch_add(1, std::memory_order_relaxed);
 
-            if(!receivedAny)
-            {
-                vTaskDelay(pdMS_TO_TICKS(1));
-            }
-
+            if (!receivedAny) vTaskDelay(pdMS_TO_TICKS(1));
+        
         }
     }
 
     #define SC(x) static_cast<unsigned long>(x)
-    
+
     void telemetryTask(void*)
     {
         telemetryCore.store(xPortGetCoreID(), std::memory_order_relaxed);
 
-        for(;;)
+        for (;;)
         {
             telemetryHeartbeat.fetch_add(1, std::memory_order_relaxed);
 
-            Serial.printf("[RUNTIME] cores acquisition=%d processing=%d telemetry=%d\n",
-                acquisitionCore.load(std::memory_order_relaxed),
-                processingCore.load(std::memory_order_relaxed),
-                telemetryCore.load(std::memory_order_relaxed));
-            
-            Serial.printf("[ACQ] target=%lu Hz period=%llu us sequence=%lu missed_notifications=%lu last_lateness=%lu us max_lateness=%lu us\n", SC(ACQUISITION_RATE_HZ), static_cast<unsigned long long>(ACQUISITION_PERIOD_US), SC(acquisitionSequence.load(std::memory_order_relaxed)), SC(missedDeadlineCount.load(std::memory_order_relaxed)), SC(lastWakeLatenessUs.load(std::memory_order_relaxed)),SC(maxWakeLatenessUs.load(std::memory_order_relaxed)));
-                
+            Serial.printf("[RUNTIME] cores acquisition=%d processing=%d telemetry=%d\n", acquisitionCore.load(std::memory_order_relaxed), processingCore.load(std::memory_order_relaxed), telemetryCore.load(std::memory_order_relaxed));
+            Serial.printf("[ACQ] target=%lu Hz period=%llu us sequence=%lu missed_notifications=%lu last_lateness=%lu us max_lateness=%lu us\n", SC(ACQUISITION_RATE_HZ), static_cast<unsigned long long>(ACQUISITION_PERIOD_US), SC(acquisitionSequence.load(std::memory_order_relaxed)), SC(missedDeadlineCount.load(std::memory_order_relaxed)), SC(lastWakeLatenessUs.load(std::memory_order_relaxed)), SC(maxWakeLatenessUs.load(std::memory_order_relaxed)));
             Serial.printf("[HEARTBEAT] acquisition=%lu processing=%lu telemetry=%lu\n", SC(acquisitionHeartbeat.load(std::memory_order_relaxed)), SC(processingHeartbeat.load(std::memory_order_relaxed)), SC(telemetryHeartbeat.load(std::memory_order_relaxed)));
 
             const UBaseType_t acquisitionStackHwm = acquisitionTaskHandle ? uxTaskGetStackHighWaterMark(acquisitionTaskHandle) : 0;
             const UBaseType_t processingStackHwm = processingTaskHandle ? uxTaskGetStackHighWaterMark(processingTaskHandle) : 0;
             const UBaseType_t telemetryStackHwm = telemetryTaskHandle ? uxTaskGetStackHighWaterMark(telemetryTaskHandle) : 0;
 
-            Serial.printf("[STACK] acquisition_hwm=%lu processing_hwm=%lu telemetry_hwm=%lu\n",SC(acquisitionStackHwm), SC(processingStackHwm), SC(telemetryStackHwm));
+            Serial.printf("[STACK] acquisition_hwm=%lu processing_hwm=%lu telemetry_hwm=%lu\n", SC(acquisitionStackHwm), SC(processingStackHwm), SC(telemetryStackHwm));
             Serial.printf("[QUEUE] raw_imu=%lu/%lu dropped=%lu\n", SC(rawImuQueue.sizeApprox()), SC(rawImuQueue.capacity()), SC(rawImuQueue.droppedCount()));
             Serial.printf("[IMU] samples_ok=%lu read_failures=%lu\n", SC(successfulImuSamples.load(std::memory_order_relaxed)), SC(failedImuReads.load(std::memory_order_relaxed)));
             Serial.printf("[PROCESS] processed=%lu invalid=%lu sequence_gaps=%lu last_sequence=%lu\n", SC(processedSamples.load(std::memory_order_relaxed)), SC(invalidSamples.load(std::memory_order_relaxed)), SC(processingSequenceGaps.load(std::memory_order_relaxed)), SC(lastProcessedSequence.load(std::memory_order_relaxed)));
             Serial.printf("[CALIBRATION] collected=%lu calibrated=%lu failures=%lu\n", SC(calibrationSamples.load(std::memory_order_relaxed)), SC(calibratedSamples.load(std::memory_order_relaxed)), SC(calibrationFailures.load(std::memory_order_relaxed)));
             Serial.printf("[FILTER] filtered=%lu failures=%lu\n", SC(filteredSamples.load(std::memory_order_relaxed)), SC(filterFailures.load(std::memory_order_relaxed)));
             Serial.printf("[ORIENTATION] valid=%lu failures=%lu\n", SC(orientationSamples.load(std::memory_order_relaxed)), SC(orientationFailures.load(std::memory_order_relaxed)));
+            Serial.printf("[KINEMATICS] valid=%lu failures=%lu\n", SC(kinematicSamples.load(std::memory_order_relaxed)), SC(kinematicFailures.load(std::memory_order_relaxed)));
 
             vTaskDelay(pdMS_TO_TICKS(1000));
         }
-
     }
 } // namespace
 
 namespace vbt::runtime
 {
-
     bool initializeImu()
     {
-        //Initialize Arduino's default 12c pins for this board
+        // Initialize Arduino's default I2C pins for this board
         Wire.begin();
 
         // The sensor and touch controller share this bus.
         // Use 400 kHz for the acquisition workload
         Wire.setClock(400000);
 
-        if(!imuSensor.begin(Wire)) return false;
+        if (!imuSensor.begin(Wire)) return false;
 
         return true;
     }
@@ -291,11 +234,10 @@ namespace vbt::runtime
     bool startTasks()
     {
         acquisitionTaskHandle = xTaskCreateStaticPinnedToCore(acquisitionTask, "acquisition", ACQUISITION_STACK_BYTES, nullptr, ACQUISITION_PRIORITY, acquisitionTaskStack, &acquisitionTaskControlBlock, ACQUISITION_CORE);
-        if(acquisitionTaskHandle == nullptr) return false;
+        if (acquisitionTaskHandle == nullptr) return false;
 
-         processingTaskHandle = xTaskCreateStaticPinnedToCore( processingTask, "processing", PROCESSING_STACK_BYTES, nullptr, PROCESSING_PRIORITY, processingTaskStack, &processingTaskControlBlock, PROCESSING_CORE);
+        processingTaskHandle = xTaskCreateStaticPinnedToCore(processingTask, "processing", PROCESSING_STACK_BYTES, nullptr, PROCESSING_PRIORITY, processingTaskStack, &processingTaskControlBlock, PROCESSING_CORE);
         if (processingTaskHandle == nullptr) return false;
-
 
         telemetryTaskHandle = xTaskCreateStaticPinnedToCore(telemetryTask, "telemetry", TELEMETRY_STACK_BYTES, nullptr, TELEMETRY_PRIORITY, telemetryTaskStack, &telemetryTaskControlBlock, TELEMETRY_CORE);
         if (telemetryTaskHandle == nullptr) return false;
@@ -306,16 +248,13 @@ namespace vbt::runtime
         timerArgs.dispatch_method = ESP_TIMER_TASK;
         timerArgs.name = "vbt_acquisition";
 
-        if (esp_timer_create(&timerArgs, &acquisitionTimer) != ESP_OK)
-        {
-            return false;
-        }
+        if (esp_timer_create(&timerArgs, &acquisitionTimer) != ESP_OK) return false;
+        
 
-        timerEpochUs =
-            static_cast<uint64_t>(esp_timer_get_time());
+        timerEpochUs = static_cast<uint64_t>(esp_timer_get_time());
 
-        const esp_err_t timerResult = esp_timer_start_periodic(
-            acquisitionTimer, ACQUISITION_PERIOD_US);
+        const esp_err_t timerResult =
+            esp_timer_start_periodic(acquisitionTimer, ACQUISITION_PERIOD_US);
 
         if (timerResult != ESP_OK)
         {
@@ -324,6 +263,6 @@ namespace vbt::runtime
             return false;
         }
 
-        return true; 
+        return true;
     }
 }
