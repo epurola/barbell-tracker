@@ -106,6 +106,7 @@ namespace vbt::ui
             case SessionState::Recording:    vbt::runtime::requestStopSession(); break;
             case SessionState::ResultsReady: vbt::runtime::requestNextSet(); break;
         }
+        
         forceRedraw_ = true;
     }
 
@@ -118,6 +119,7 @@ namespace vbt::ui
             case SessionState::Recording:
             case SessionState::ResultsReady:   vbt::runtime::requestModeSelect(); break;
         }
+
         forceRedraw_ = true;
     }
 

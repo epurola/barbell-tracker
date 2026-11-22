@@ -2,12 +2,7 @@
 
 namespace vbt::processing
 {
-    ImuPipeline::ImuPipeline()
-        : sessionState_(SessionState::IdleModeSelect),
-          setNumber_(1),
-          activeAnalyzer_(&barbellAnalyzer_)
-    {
-    }
+    ImuPipeline::ImuPipeline() : sessionState_(SessionState::IdleModeSelect), setNumber_(1), activeAnalyzer_(&barbellAnalyzer_) {}
 
     ActivityAnalyzer* ImuPipeline::analyzerForMode(ActivityMode mode)
     {
@@ -51,8 +46,7 @@ namespace vbt::processing
         kinematics_.reset();
 
         // Use 20 Hz low-pass for Barbell VBT & Standing Jump, and 50 Hz for high-speed ground contacts.
-        const float cutoffHz =
-            (mode == ActivityMode::BarbellVbt || mode == ActivityMode::StandingJump)
+        const float cutoffHz = (mode == ActivityMode::BarbellVbt || mode == ActivityMode::StandingJump)
                 ? ImuFilter::CUTOFF_HZ
                 : ImuFilter::HIGH_SPEED_CUTOFF_HZ;
         filter_.setCutoffHz(cutoffHz);
@@ -168,12 +162,8 @@ namespace vbt::processing
         if (!validateAndTrackSequence(sample)) return false;
 
         // When browsing mode cards or viewing completed set results, pause pipeline analysis.
-        if (sessionState_ == SessionState::IdleModeSelect ||
-            sessionState_ == SessionState::ResultsReady)
-        {
-            return false;
-        }
-
+        if (sessionState_ == SessionState::IdleModeSelect || sessionState_ == SessionState::ResultsReady) return false;
+        
         using CalibratorState = ImuCalibrator::State;
 
         if (calibrator_.state() == CalibratorState::Collecting)
