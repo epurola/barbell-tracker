@@ -24,9 +24,6 @@ namespace vbt::runtime
     // Return to the swipeable mode selection carousel (`SessionState::IdleModeSelect`).
     void requestModeSelect();
 
-    // Backward-compatible alias for requestStartSession(mode, true).
-    void requestActivityMode(vbt::ActivityMode mode);
-
     // State queries for the UI task:
     vbt::ActivityMode activeActivityMode();
     vbt::SessionState activeSessionState();

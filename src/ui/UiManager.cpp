@@ -7,6 +7,7 @@
 #include "touch/Touch_AXS5106L.h"
 #include <cmath>
 #include <cstdio>
+#include "common/DebugLog.h"
 #include "runtime/RuntimeTasks.h"
 
 namespace
@@ -73,13 +74,13 @@ namespace vbt::ui
 
         if (!display.begin<Board_XIAO_1inch47_Touch_Display<PIN_LCD_RST, PIN_LCD_BL>, Config_Seeed_1inch47_Touch_JD9853A>())
         {
-            Serial.println("ERROR: JD9853A display initialization failed");
+            VBT_LOGLN("ERROR: JD9853A display initialization failed");
             return false;
         }
         
         if (!display.attachTouch(touch, display.panel().driver().bus()))
         {
-            Serial.println("WARNING: AXS5106L touch attach failed (buttons still active)");
+            VBT_LOGLN("WARNING: AXS5106L touch attach failed (buttons still active)");
         }
 
         display.fillScreen(COLOR_BG);

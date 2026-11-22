@@ -1,20 +1,20 @@
 #include <Arduino.h>
+#include "common/DebugLog.h"
 #include "runtime/RuntimeTasks.h"
 
 void setup()
 {
-    Serial.begin(115200);
-    delay(1000);
+    VBT_LOG_BEGIN(115200);
 
     if (!vbt::runtime::initializeImu())
     {
-        Serial.println("ERROR: LSM6DS3 initialization failed. Check I2C wiring, address, and sensor configuration.");
+        VBT_LOGLN("ERROR: LSM6DS3 initialization failed. Check I2C wiring, address, and sensor configuration.");
         while (true) delay(1000);
     }
 
     if (!vbt::runtime::startTasks())
     {
-        Serial.println("ERROR: Failed to create runtime tasks");
+        VBT_LOGLN("ERROR: Failed to create runtime tasks");
         while (true) delay(1000);
     }
 }

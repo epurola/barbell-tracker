@@ -3,9 +3,9 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <atomic>
-#include <climits>
 #include <cstdint>
 
+#include "common/DebugLog.h"
 #include "config/RuntimeConfig.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -32,29 +32,31 @@ namespace
 
     StaticTask_t acquisitionTaskControlBlock;
     StaticTask_t processingTaskControlBlock;
+#if VBT_DEBUG_SERIAL
     StaticTask_t telemetryTaskControlBlock;
+    StackType_t telemetryTaskStack[TELEMETRY_STACK_BYTES / sizeof(StackType_t)];
+    TaskHandle_t telemetryTaskHandle   = nullptr;
+    std::atomic<uint32_t> telemetryHeartbeat{0};
+    std::atomic<int> telemetryCore{0};
+#endif
     StaticTask_t uiTaskControlBlock;
 
     StackType_t acquisitionTaskStack[ACQUISITION_STACK_BYTES / sizeof(StackType_t)];
     StackType_t processingTaskStack[PROCESSING_STACK_BYTES / sizeof(StackType_t)];
-    StackType_t telemetryTaskStack[TELEMETRY_STACK_BYTES / sizeof(StackType_t)];
     StackType_t uiTaskStack[UI_STACK_BYTES / sizeof(StackType_t)];
 
     TaskHandle_t acquisitionTaskHandle = nullptr;
     TaskHandle_t processingTaskHandle  = nullptr;
-    TaskHandle_t telemetryTaskHandle   = nullptr;
     TaskHandle_t uiTaskHandle          = nullptr;
 
     esp_timer_handle_t acquisitionTimer = nullptr;
 
     std::atomic<uint32_t> acquisitionHeartbeat{0};
     std::atomic<uint32_t> processingHeartbeat{0};
-    std::atomic<uint32_t> telemetryHeartbeat{0};
     std::atomic<uint32_t> uiHeartbeat{0};
 
     std::atomic<int> acquisitionCore{0};
     std::atomic<int> processingCore{0};
-    std::atomic<int> telemetryCore{0};
     std::atomic<int> uiCore{0};
 
     std::atomic<uint32_t> acquisitionSequence{0};
@@ -147,18 +149,9 @@ namespace
 
         switch (cmd)
         {
-            case PendingCommand::StartCalibratedSession:
-                pipeline.startSession(mode, true);
-                break;
-
-            case PendingCommand::StartUncalibratedSession:
-                pipeline.startSession(mode, false);
-                break;
-
-            case PendingCommand::StartNextSet:
-                pipeline.startNextSet();
-                break;
-
+            case PendingCommand::StartCalibratedSession:   pipeline.startSession(mode, true); break;
+            case PendingCommand::StartUncalibratedSession: pipeline.startSession(mode, false); break;
+            case PendingCommand::StartNextSet:             pipeline.startNextSet(); break;
             case PendingCommand::StopSession:
             {
                 vbt::ActivityOutput finalOutput{};
@@ -166,13 +159,8 @@ namespace
                 publishActivityResult(finalOutput);
                 break;
             }
-
-            case PendingCommand::ReturnToModeSelect:
-                pipeline.returnToModeSelect();
-                break;
-
-            default:
-                break;
+            case PendingCommand::ReturnToModeSelect: pipeline.returnToModeSelect(); break;
+            default: break;
         }
 
         currentMode.store(static_cast<uint8_t>(pipeline.mode()), std::memory_order_relaxed);
@@ -235,8 +223,10 @@ namespace
         processingCore.store(xPortGetCoreID(), std::memory_order_relaxed);
 
         static vbt::processing::ImuPipeline pipeline{};
+#if VBT_DEBUG_SERIAL
         auto previousCalState = pipeline.calibrationState();
         uint32_t previousCalFailures = 0;
+#endif
 
         for (;;)
         {
@@ -260,11 +250,12 @@ namespace
 
                 currentSessionState.store( static_cast<uint8_t>(pipeline.sessionState()), std::memory_order_relaxed);
 
+#if VBT_DEBUG_SERIAL
                 const auto& counts = pipeline.counters();
                 if (counts.calibrationFailures != previousCalFailures)
                 {
                     previousCalFailures = counts.calibrationFailures;
-                    Serial.println("[CALIBRATION] Failed: sensor was not stationary (retrying...)");
+                    VBT_LOGLN("[CALIBRATION] Failed: sensor was not stationary (retrying...)");
                 }
 
                 const auto currentCalState = pipeline.calibrationState();
@@ -272,10 +263,11 @@ namespace
                 {
                     if (currentCalState == vbt::processing::ImuCalibrator::State::Ready)
                     {
-                        Serial.println("[CALIBRATION] Complete — Recording active");
+                        VBT_LOGLN("[CALIBRATION] Complete — Recording active");
                     }
                     previousCalState = currentCalState;
                 }
+#endif
             }
 
             if (receivedAny) publishPipelineCounters(pipeline.counters());
@@ -286,8 +278,6 @@ namespace
         }
     }
 
-    #define SC(x) static_cast<unsigned long>(x)
-
     // Pinned to Core 0 (UI_CORE, Priority 2).
     // Initializes the SPI display on Core 0 and handles touch/button UI updates.
     void uiTask(void* /*parameter*/)
@@ -296,7 +286,7 @@ namespace
 
         if (!uiManager.begin())
         {
-            Serial.println("ERROR: UI initialization failed");
+            VBT_LOGLN("ERROR: UI initialization failed");
             vTaskSuspend(nullptr);
         }
 
@@ -307,6 +297,9 @@ namespace
             vTaskDelay(pdMS_TO_TICKS(25));
         }
     }
+
+#if VBT_DEBUG_SERIAL
+    #define SC(x) static_cast<unsigned long>(x)
 
     // Pinned to Core 0 (TELEMETRY_CORE, Priority 2).
     // Prints 1 Hz diagnostic telemetry snapshots over Serial.
@@ -340,6 +333,7 @@ namespace
             vTaskDelay(pdMS_TO_TICKS(1000));
         }
     }
+#endif
 } // namespace
 
 namespace vbt::runtime
@@ -366,8 +360,10 @@ namespace vbt::runtime
         processingTaskHandle = xTaskCreateStaticPinnedToCore(processingTask, "processing", PROCESSING_STACK_BYTES, nullptr, PROCESSING_PRIORITY, processingTaskStack, &processingTaskControlBlock, PROCESSING_CORE);
         if (processingTaskHandle == nullptr) return false;
 
+#if VBT_DEBUG_SERIAL
         telemetryTaskHandle = xTaskCreateStaticPinnedToCore(telemetryTask, "telemetry", TELEMETRY_STACK_BYTES, nullptr, TELEMETRY_PRIORITY, telemetryTaskStack, &telemetryTaskControlBlock, TELEMETRY_CORE);
         if (telemetryTaskHandle == nullptr) return false;
+#endif
 
         uiTaskHandle = xTaskCreateStaticPinnedToCore(uiTask, "ui", UI_STACK_BYTES, nullptr, UI_PRIORITY, uiTaskStack, &uiTaskControlBlock, UI_CORE);
         if (uiTaskHandle == nullptr) return false;
@@ -413,11 +409,6 @@ namespace vbt::runtime
     void requestModeSelect()
     {
         pendingCommand.store(static_cast<uint8_t>(PendingCommand::ReturnToModeSelect), std::memory_order_release);
-    }
-
-    void requestActivityMode(vbt::ActivityMode mode)
-    {
-        requestStartSession(mode, true);
     }
 
     vbt::ActivityMode activeActivityMode()
