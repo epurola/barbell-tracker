@@ -59,9 +59,7 @@ namespace vbt::processing
 
     void KinematicsEstimator::setGravityMagnitude(float gravityMps2)
     {
-        if (std::isfinite(gravityMps2) &&
-            gravityMps2 >= GRAVITY_MPS2 * 0.85f &&
-            gravityMps2 <= GRAVITY_MPS2 * 1.15f)
+        if (std::isfinite(gravityMps2) && gravityMps2 >= GRAVITY_MPS2 * 0.85f && gravityMps2 <= GRAVITY_MPS2 * 1.15f)
         {
             gravityMps2_ = gravityMps2;
         }

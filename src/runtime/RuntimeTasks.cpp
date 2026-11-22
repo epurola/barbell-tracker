@@ -14,6 +14,7 @@
 #include "processing/ImuPipeline.h"
 #include "runtime/AcquisitionSchedule.h"
 #include "runtime/ImuSampleQueue.h"
+#include "ui/UiManager.h"
 
 namespace
 {
@@ -32,24 +33,29 @@ namespace
     StaticTask_t acquisitionTaskControlBlock;
     StaticTask_t processingTaskControlBlock;
     StaticTask_t telemetryTaskControlBlock;
+    StaticTask_t uiTaskControlBlock;
 
     StackType_t acquisitionTaskStack[ACQUISITION_STACK_BYTES / sizeof(StackType_t)];
     StackType_t processingTaskStack[PROCESSING_STACK_BYTES / sizeof(StackType_t)];
     StackType_t telemetryTaskStack[TELEMETRY_STACK_BYTES / sizeof(StackType_t)];
+    StackType_t uiTaskStack[UI_STACK_BYTES / sizeof(StackType_t)];
 
     TaskHandle_t acquisitionTaskHandle = nullptr;
     TaskHandle_t processingTaskHandle  = nullptr;
     TaskHandle_t telemetryTaskHandle   = nullptr;
+    TaskHandle_t uiTaskHandle          = nullptr;
 
     esp_timer_handle_t acquisitionTimer = nullptr;
 
     std::atomic<uint32_t> acquisitionHeartbeat{0};
     std::atomic<uint32_t> processingHeartbeat{0};
     std::atomic<uint32_t> telemetryHeartbeat{0};
+    std::atomic<uint32_t> uiHeartbeat{0};
 
     std::atomic<int> acquisitionCore{0};
     std::atomic<int> processingCore{0};
     std::atomic<int> telemetryCore{0};
+    std::atomic<int> uiCore{0};
 
     std::atomic<uint32_t> acquisitionSequence{0};
     std::atomic<uint32_t> missedDeadlineCount{0};
@@ -80,8 +86,10 @@ namespace
     std::atomic<uint8_t> pendingCommand{static_cast<uint8_t>(PendingCommand::None)};
     std::atomic<uint8_t> requestedMode{static_cast<uint8_t>(vbt::ActivityMode::BarbellVbt)};
     std::atomic<uint8_t> currentMode{static_cast<uint8_t>(vbt::ActivityMode::BarbellVbt)};
-    std::atomic<uint8_t> currentSessionState{static_cast<uint8_t>(vbt::SessionState::Calibrating)};
+    std::atomic<uint8_t> currentSessionState{static_cast<uint8_t>(vbt::SessionState::IdleModeSelect)};
     std::atomic<bool> effortInProgress{false};
+
+    vbt::ui::UiManager uiManager{};
 
     portMUX_TYPE resultSnapshotMux = portMUX_INITIALIZER_UNLOCKED;
     vbt::ActivityOutput latestResultSnapshot{};
@@ -270,15 +278,11 @@ namespace
             if (missed > 0) missedDeadlineCount.fetch_add(missed, std::memory_order_relaxed);
 
             // Advance the sequence for every timer notification received.
-            const uint32_t sequence =
-                acquisitionSequence.fetch_add(notifications, std::memory_order_relaxed) + notifications;
-            const uint64_t scheduledDeadlineUs =
-                acquisitionDeadlineUs(timerEpochUs, sequence, ACQUISITION_PERIOD_US);
+            const uint32_t sequence = acquisitionSequence.fetch_add(notifications, std::memory_order_relaxed) + notifications;
+            const uint64_t scheduledDeadlineUs = acquisitionDeadlineUs(timerEpochUs, sequence, ACQUISITION_PERIOD_US);
             const uint64_t actualWakeUs = static_cast<uint64_t>(esp_timer_get_time());
-            const uint64_t latenessUs =
-                actualWakeUs > scheduledDeadlineUs ? actualWakeUs - scheduledDeadlineUs : 0;
-            const uint32_t lateness32 =
-                latenessUs > UINT32_MAX ? UINT32_MAX : static_cast<uint32_t>(latenessUs);
+            const uint64_t latenessUs = actualWakeUs > scheduledDeadlineUs ? actualWakeUs - scheduledDeadlineUs : 0;
+            const uint32_t lateness32 = latenessUs > UINT32_MAX ? UINT32_MAX : static_cast<uint32_t>(latenessUs);
 
             lastWakeLatenessUs.store(lateness32, std::memory_order_relaxed);
             updateMaximumLateness(lateness32);
@@ -287,6 +291,10 @@ namespace
             vbt::RawImuSample sample{};
 
             const uint64_t sampleTimestampsUs = static_cast<uint64_t>(esp_timer_get_time());
+
+            const auto state = static_cast<vbt::SessionState>(currentSessionState.load(std::memory_order_relaxed));
+
+            if (state == vbt::SessionState::IdleModeSelect || state == vbt::SessionState::ResultsReady) continue;
 
             if (imuSensor.readSample(sample, sampleTimestampsUs, sequence))
             {
@@ -367,6 +375,26 @@ namespace
 
     #define SC(x) static_cast<unsigned long>(x)
 
+    // Pinned to Core 0 (UI_CORE, Priority 2).
+    // Initializes the SPI display on Core 0 and handles touch/button UI updates.
+    void uiTask(void* /*parameter*/)
+    {
+        uiCore.store(xPortGetCoreID(), std::memory_order_relaxed);
+
+        if (!uiManager.begin())
+        {
+            Serial.println("ERROR: UI initialization failed");
+            vTaskSuspend(nullptr);
+        }
+
+        for (;;)
+        {
+            uiHeartbeat.fetch_add(1, std::memory_order_relaxed);
+            uiManager.update();
+            vTaskDelay(pdMS_TO_TICKS(25));
+        }
+    }
+
     // Pinned to Core 0 (TELEMETRY_CORE, Priority 2).
     // Prints 1 Hz diagnostic telemetry snapshots over Serial.
     void telemetryTask(void*)
@@ -377,10 +405,11 @@ namespace
         {
             telemetryHeartbeat.fetch_add(1, std::memory_order_relaxed);
 
-            Serial.printf("[RUNTIME] cores acquisition=%d processing=%d telemetry=%d\n",
+            Serial.printf("[RUNTIME] cores acquisition=%d processing=%d telemetry=%d ui=%d\n",
                 acquisitionCore.load(std::memory_order_relaxed),
                 processingCore.load(std::memory_order_relaxed),
-                telemetryCore.load(std::memory_order_relaxed));
+                telemetryCore.load(std::memory_order_relaxed),
+                uiCore.load(std::memory_order_relaxed));
             Serial.printf("[ACQ] target=%lu Hz period=%llu us sequence=%lu missed_notifications=%lu last_lateness=%lu us max_lateness=%lu us\n",
                 SC(ACQUISITION_RATE_HZ),
                 static_cast<unsigned long long>(ACQUISITION_PERIOD_US),
@@ -388,19 +417,22 @@ namespace
                 SC(missedDeadlineCount.load(std::memory_order_relaxed)),
                 SC(lastWakeLatenessUs.load(std::memory_order_relaxed)),
                 SC(maxWakeLatenessUs.load(std::memory_order_relaxed)));
-            Serial.printf("[HEARTBEAT] acquisition=%lu processing=%lu telemetry=%lu\n",
+            Serial.printf("[HEARTBEAT] acquisition=%lu processing=%lu telemetry=%lu ui=%lu\n",
                 SC(acquisitionHeartbeat.load(std::memory_order_relaxed)),
                 SC(processingHeartbeat.load(std::memory_order_relaxed)),
-                SC(telemetryHeartbeat.load(std::memory_order_relaxed)));
+                SC(telemetryHeartbeat.load(std::memory_order_relaxed)),
+                SC(uiHeartbeat.load(std::memory_order_relaxed)));
 
             const UBaseType_t acquisitionStackHwm = acquisitionTaskHandle ? uxTaskGetStackHighWaterMark(acquisitionTaskHandle) : 0;
             const UBaseType_t processingStackHwm = processingTaskHandle ? uxTaskGetStackHighWaterMark(processingTaskHandle) : 0;
             const UBaseType_t telemetryStackHwm = telemetryTaskHandle ? uxTaskGetStackHighWaterMark(telemetryTaskHandle) : 0;
+            const UBaseType_t uiStackHwm = uiTaskHandle ? uxTaskGetStackHighWaterMark(uiTaskHandle) : 0;
 
-            Serial.printf("[STACK] acquisition_hwm=%lu processing_hwm=%lu telemetry_hwm=%lu\n",
+            Serial.printf("[STACK] acquisition_hwm=%lu processing_hwm=%lu telemetry_hwm=%lu ui_hwm=%lu\n",
                 SC(acquisitionStackHwm),
                 SC(processingStackHwm),
-                SC(telemetryStackHwm));
+                SC(telemetryStackHwm),
+                SC(uiStackHwm));
             Serial.printf("[QUEUE] raw_imu=%lu/%lu dropped=%lu\n",
                 SC(rawImuQueue.sizeApprox()),
                 SC(rawImuQueue.capacity()),
@@ -486,6 +518,17 @@ namespace vbt::runtime
             &telemetryTaskControlBlock,
             TELEMETRY_CORE);
         if (telemetryTaskHandle == nullptr) return false;
+
+        uiTaskHandle = xTaskCreateStaticPinnedToCore(
+            uiTask,
+            "ui",
+            UI_STACK_BYTES,
+            nullptr,
+            UI_PRIORITY,
+            uiTaskStack,
+            &uiTaskControlBlock,
+            UI_CORE);
+        if (uiTaskHandle == nullptr) return false;
 
         esp_timer_create_args_t timerArgs{};
         timerArgs.callback = acquisitionTimerCallback;

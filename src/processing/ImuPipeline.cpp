@@ -3,7 +3,7 @@
 namespace vbt::processing
 {
     ImuPipeline::ImuPipeline()
-        : sessionState_(SessionState::Calibrating),
+        : sessionState_(SessionState::IdleModeSelect),
           setNumber_(1),
           activeAnalyzer_(&barbellAnalyzer_)
     {
