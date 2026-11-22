@@ -1,4 +1,4 @@
-#include "processing/kinematicsEstimator.h"
+#include "processing/KinematicsEstimator.h"
 
 #include <cmath>
 
@@ -9,7 +9,7 @@ namespace
         return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
     }
 
-    bool finiteQuaternion(const vbt::Quaternion q)
+    bool finiteQuaternion(const vbt::Quaternion& q)
     {
         return std::isfinite(q.w) && std::isfinite(q.x) && std::isfinite(q.y) && std::isfinite(q.z);
     }
@@ -52,9 +52,19 @@ namespace vbt::processing
         return { bodyVector.x + bodyToWorld.w * t.x + c2.x, bodyVector.y + bodyToWorld.w * t.y + c2.y, bodyVector.z + bodyToWorld.w * t.z + c2.z };
     }
 
-    Vector3 KinematicsEstimator::removeGravity(const Vector3& worldAccelerationMps2)
+    Vector3 KinematicsEstimator::removeGravity(const Vector3& worldAccelerationMps2, float gravityMps2)
     {
-        return { worldAccelerationMps2.x, worldAccelerationMps2.y, worldAccelerationMps2.z - GRAVITY_MPS2};
+        return { worldAccelerationMps2.x, worldAccelerationMps2.y, worldAccelerationMps2.z - gravityMps2 };
+    }
+
+    void KinematicsEstimator::setGravityMagnitude(float gravityMps2)
+    {
+        if (std::isfinite(gravityMps2) &&
+            gravityMps2 >= GRAVITY_MPS2 * 0.85f &&
+            gravityMps2 <= GRAVITY_MPS2 * 1.15f)
+        {
+            gravityMps2_ = gravityMps2;
+        }
     }
 
     bool KinematicsEstimator::isSampleQuiet(const Vector3& linearAccelerationMps2, const Vector3& gyroscopeRadps)
@@ -82,7 +92,7 @@ namespace vbt::processing
         if (!finiteVector(imuSample.accelerometer_mps2) || !finiteVector(imuSample.gyroscope_radps) || !finiteQuaternion(orientationState.body_to_world) || !isNormalizedQuaternion(orientationState.body_to_world)) return false;
         
         const Vector3 worldAcceleration = rotateBodyToWorld(imuSample.accelerometer_mps2, orientationState.body_to_world);
-        const Vector3  linearAcceleration = removeGravity(worldAcceleration);
+        const Vector3 linearAcceleration = removeGravity(worldAcceleration, gravityMps2_);
 
         if (!finiteVector(linearAcceleration)) return false;
 
@@ -95,7 +105,7 @@ namespace vbt::processing
             velocityMps_ = {};
             positionM_ = {};
             stationaryCount_ = quiet ? 1 : 0;
-            stationary_ = quiet;
+            stationary_ = false;
             initialized_ = true;
         }
         else
@@ -110,7 +120,7 @@ namespace vbt::processing
                 // Stale gap: reset velocity integration to avoid a huge jump.
                 velocityMps_ = {};
                 stationaryCount_ = quiet ? 1 : 0;
-                stationary_ = quiet;
+                stationary_ = false;
             }
             else
             {

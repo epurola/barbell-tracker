@@ -15,9 +15,9 @@ namespace
     constexpr uint8_t STATUS_GDA  = 1u << 1;
 
     // LSM6DS3 configured ranges:
-    // Accelerometer: +/-4 g, 0.122 mg/LSB.
+    // Accelerometer: +/-8 g, 0.244 mg/LSB (prevents clipping on jump/sprint/hurdle impacts).
     // Gyroscope:     +/-2000 degrees/s, 70 mdps/LSB.
-    constexpr float ACCEL_MPS2_PER_LSB = 0.000122f * 9.80655f;
+    constexpr float ACCEL_MPS2_PER_LSB = 0.000244f * 9.80665f;
     constexpr float GYRO_RAPDPS_PER_LSB = 0.070f * 0.017453292519943295f;
   
 
@@ -45,11 +45,11 @@ namespace vbt::imu
         if(!writeRegister(REG_CTLR3_C, 0x44)) return false;
 
         // Accelerometer:
-        // ODR = 833 Hz, full scale = +/-4 g
-        if(!writeRegister(REG_CTRL1_XL, 0x78)) return false;
+        // ODR = 833 Hz, full scale = +/-8 g (0x7C)
+        if(!writeRegister(REG_CTRL1_XL, 0x7C)) return false;
 
         // Gyroscope:
-        // ODR = 833 Hz, full scale = +/-2000 degrees/s
+        // ODR = 833 Hz, full scale = +/-2000 degrees/s (0x7C)
         if(!writeRegister(REG_CTLR2_G, 0x7C)) return false;
 
         delay(10);
@@ -59,7 +59,7 @@ namespace vbt::imu
         uint8_t gyroConfig = 0;
 
         if(!readRegister(REG_CTRL1_XL, accelConfig) || !readRegister(REG_CTLR2_G, gyroConfig)) return false;
-        if(accelConfig != 0x78 || gyroConfig != 0x7C) return false;
+        if(accelConfig != 0x7C || gyroConfig != 0x7C) return false;
 
         initialized_ = true;
         return true;
@@ -94,13 +94,10 @@ namespace vbt::imu
 
          // Convert to SI units. These are sensor-scaled measurements,
          // not yet bias-corrected or calibrated.
-         sample.accelerometer = vbt::Vector3(accelX * ACCEL_MPS2_PER_LSB, accelY * ACCEL_MPS2_PER_LSB, accelZ * ACCEL_MPS2_PER_LSB);
-         sample.gyroscope = vbt::Vector3(gyroX * GYRO_RAPDPS_PER_LSB, gyroY * GYRO_RAPDPS_PER_LSB, gyroZ * GYRO_RAPDPS_PER_LSB);
-         sample.status = vbt::SampleStatus::Valid | 
-                         vbt::SampleStatus::AccelorometerOk |
-                         vbt::SampleStatus::GyroscopeOk | 
-                         vbt::SampleStatus::TimestampValid |
-                         vbt::SampleStatus::SequenceValid;
+        sample.accelerometer = vbt::Vector3(accelX * ACCEL_MPS2_PER_LSB, accelY * ACCEL_MPS2_PER_LSB, accelZ * ACCEL_MPS2_PER_LSB);
+        sample.gyroscope = vbt::Vector3(gyroX * GYRO_RAPDPS_PER_LSB, gyroY * GYRO_RAPDPS_PER_LSB, gyroZ * GYRO_RAPDPS_PER_LSB);
+        sample.status = vbt::SampleStatus::Valid | vbt::SampleStatus::AccelorometerOk | vbt::SampleStatus::GyroscopeOk | vbt::SampleStatus::TimestampValid | vbt::SampleStatus::SequenceValid;
+        
         return true;
     }
 

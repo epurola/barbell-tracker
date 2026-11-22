@@ -4,3 +4,4 @@
 #include "contracts/OrientationTypes.h"
 #include "contracts/KinematicTypes.h"
 #include "contracts/RepTypes.h"
+#include "contracts/ModeTypes.h"

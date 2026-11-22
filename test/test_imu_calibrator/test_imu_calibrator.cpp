@@ -1,7 +1,7 @@
 
 #include <unity.h>
 
-#include "processing/ImuCalibrator.h"
+#include "processing/ImuCalibration.h"
 
 using namespace vbt;
 using namespace vbt::processing;

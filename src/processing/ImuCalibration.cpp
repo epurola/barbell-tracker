@@ -6,8 +6,7 @@ namespace
 {
     constexpr float GRAVITY_MPS2 = 9.80665f;
 
-    // Stationarity thresholds. These are initial engineering limits,
-    // to be validated against real sensor measurements.
+    // Stationarity thresholds.
     constexpr float MAX_MEAN_GYRO_RADPS = 0.15f;
     constexpr float MAX_GYRO_STDDEV_RADPS = 0.02f;
     constexpr float MAX_ACCEL_STDDEV_MPS2 = 0.15f;
@@ -19,32 +18,11 @@ namespace
         return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
     }
 
-    vbt::Vector3 calculateMean(const vbt::Vector3& sum, uint32_t count)
-    {
-        const float divisor = static_cast<float>(count);
-
-        return { sum.x / divisor, sum.y / divisor, sum.z / divisor };
-    }
-
-    vbt::Vector3 calculateStdDev(const vbt::Vector3& sum, const vbt::Vector3& squaredSum, uint32_t count)
-    {
-        const float divisor = static_cast<float>(count);
-        const vbt::Vector3 mean = calculateMean(sum, count);
-
-        const float varianceX = (squaredSum.x / divisor) - mean.x * mean.x;
-        const float varianceY = (squaredSum.y / divisor) - mean.y * mean.y;
-        const float varianceZ = (squaredSum.z / divisor) - mean.z * mean.z;
-
-        return { std::sqrt(varianceX > 0.0f ? varianceX : 0.0f), std::sqrt(varianceY > 0.0f ? varianceY : 0.0f), std::sqrt(varianceZ > 0.0f ? varianceZ : 0.0f) };
-    }
-
     float maximumComponent(const vbt::Vector3& value)
     {
         float result = value.x;
-
-        if(value.y > result) result = value.y;
+        if (value.y > result) result = value.y;
         if (value.z > result) result = value.z;
-
         return result;
     }
 }
@@ -68,53 +46,72 @@ namespace vbt::processing
 
     bool ImuCalibrator::isValidRawSample(const RawImuSample& sample) const
     {
-        const SampleStatus required = SampleStatus::Valid | SampleStatus::AccelorometerOk | SampleStatus::GyroscopeOk | SampleStatus::TimestampValid | SampleStatus::SequenceValid;
+        const SampleStatus required =
+            SampleStatus::Valid |
+            SampleStatus::AccelorometerOk |
+            SampleStatus::GyroscopeOk |
+            SampleStatus::TimestampValid |
+            SampleStatus::SequenceValid;
 
         const uint32_t requiredBits = toBits(required);
         const uint32_t actualBits = toBits(sample.status);
-        return(actualBits & requiredBits) == requiredBits && finiteVector(sample.accelerometer) && finiteVector(sample.gyroscope);
+        return (actualBits & requiredBits) == requiredBits &&
+               finiteVector(sample.accelerometer) &&
+               finiteVector(sample.gyroscope);
     }
 
     bool ImuCalibrator::collect(const RawImuSample& sample)
     {
-        if(state_ != State::Collecting) return state_ == State::Ready;
-        if(!isValidRawSample(sample)) return false;
+        if (state_ != State::Collecting) return state_ == State::Ready;
+        if (!isValidRawSample(sample)) return false;
 
-        const Vector3& gyro = sample.gyroscope;
-        const Vector3& accel = sample.accelerometer;
+        const double gx = static_cast<double>(sample.gyroscope.x);
+        const double gy = static_cast<double>(sample.gyroscope.y);
+        const double gz = static_cast<double>(sample.gyroscope.z);
 
-        gyroSum_.x += gyro.x;
-        gyroSum_.y += gyro.y;
-        gyroSum_.z += gyro.z;
+        const double ax = static_cast<double>(sample.accelerometer.x);
+        const double ay = static_cast<double>(sample.accelerometer.y);
+        const double az = static_cast<double>(sample.accelerometer.z);
 
-        gyroSquaredSum_.x += gyro.x * gyro.x;
-        gyroSquaredSum_.y += gyro.y * gyro.y;
-        gyroSquaredSum_.z += gyro.z * gyro.z;
+        gyroSum_.x += gx;
+        gyroSum_.y += gy;
+        gyroSum_.z += gz;
 
-        accelSum_.x += accel.x;
-        accelSum_.y += accel.y;
-        accelSum_.z += accel.z;
+        gyroSquaredSum_.x += gx * gx;
+        gyroSquaredSum_.y += gy * gy;
+        gyroSquaredSum_.z += gz * gz;
 
-        accelSquaredSum_.x += accel.x * accel.x;
-        accelSquaredSum_.y += accel.y * accel.y;
-        accelSquaredSum_.z += accel.z * accel.z;
+        accelSum_.x += ax;
+        accelSum_.y += ay;
+        accelSum_.z += az;
+
+        accelSquaredSum_.x += ax * ax;
+        accelSquaredSum_.y += ay * ay;
+        accelSquaredSum_.z += az * az;
 
         ++sampleCount_;
 
-        if(sampleCount_ < CALIBRATION_SAMPLE_COUNT) return false;
+        if (sampleCount_ < CALIBRATION_SAMPLE_COUNT) return false;
 
-        if(!validateStationarity())
+        if (!validateStationarity())
         {
             state_ = State::Failed;
             return false;
         }
 
-        gyroBiasRadps_ = calculateMean(gyroSum_, sampleCount_);
+        const double invCount = 1.0 / static_cast<double>(sampleCount_);
 
-        // This is the measured stationary acceleration vector,
-        // including gravity. It is NOT an independently measured
-        // accelerometer bias.
-        gravityReferenceMps2_ = calculateMean(accelSum_, sampleCount_);
+        gyroBiasRadps_ = {
+            static_cast<float>(gyroSum_.x * invCount),
+            static_cast<float>(gyroSum_.y * invCount),
+            static_cast<float>(gyroSum_.z * invCount)
+        };
+
+        gravityReferenceMps2_ = {
+            static_cast<float>(accelSum_.x * invCount),
+            static_cast<float>(accelSum_.y * invCount),
+            static_cast<float>(accelSum_.z * invCount)
+        };
 
         state_ = State::Ready;
         return true;
@@ -122,13 +119,47 @@ namespace vbt::processing
 
     bool ImuCalibrator::validateStationarity() const
     {
-        if(sampleCount_ == 0) return false;
+        if (sampleCount_ == 0) return false;
 
-        const Vector3 meanGyro = calculateMean(gyroSum_, sampleCount_);
-        const Vector3 meanAccel = calculateMean(accelSum_, sampleCount_);
+        const double invCount = 1.0 / static_cast<double>(sampleCount_);
 
-        const Vector3 gyroStdDev = calculateStdDev(gyroSum_, gyroSquaredSum_, sampleCount_);
-        const Vector3 accelStdDev = calculateStdDev( accelSum_, accelSquaredSum_, sampleCount_);
+        const double meanGx = gyroSum_.x * invCount;
+        const double meanGy = gyroSum_.y * invCount;
+        const double meanGz = gyroSum_.z * invCount;
+
+        const double meanAx = accelSum_.x * invCount;
+        const double meanAy = accelSum_.y * invCount;
+        const double meanAz = accelSum_.z * invCount;
+
+        const double varGx = (gyroSquaredSum_.x * invCount) - (meanGx * meanGx);
+        const double varGy = (gyroSquaredSum_.y * invCount) - (meanGy * meanGy);
+        const double varGz = (gyroSquaredSum_.z * invCount) - (meanGz * meanGz);
+
+        const double varAx = (accelSquaredSum_.x * invCount) - (meanAx * meanAx);
+        const double varAy = (accelSquaredSum_.y * invCount) - (meanAy * meanAy);
+        const double varAz = (accelSquaredSum_.z * invCount) - (meanAz * meanAz);
+
+        const Vector3 meanGyro{
+            static_cast<float>(meanGx),
+            static_cast<float>(meanGy),
+            static_cast<float>(meanGz)
+        };
+        const Vector3 meanAccel{
+            static_cast<float>(meanAx),
+            static_cast<float>(meanAy),
+            static_cast<float>(meanAz)
+        };
+
+        const Vector3 gyroStdDev{
+            static_cast<float>(std::sqrt(varGx > 0.0 ? varGx : 0.0)),
+            static_cast<float>(std::sqrt(varGy > 0.0 ? varGy : 0.0)),
+            static_cast<float>(std::sqrt(varGz > 0.0 ? varGz : 0.0))
+        };
+        const Vector3 accelStdDev{
+            static_cast<float>(std::sqrt(varAx > 0.0 ? varAx : 0.0)),
+            static_cast<float>(std::sqrt(varAy > 0.0 ? varAy : 0.0)),
+            static_cast<float>(std::sqrt(varAz > 0.0 ? varAz : 0.0))
+        };
 
         const float gyroMagnitude = meanGyro.magnitude();
         const float gravityMagnitude = meanAccel.magnitude();
@@ -136,15 +167,14 @@ namespace vbt::processing
         if (gyroMagnitude > MAX_MEAN_GYRO_RADPS) return false;
         if (maximumComponent(gyroStdDev) > MAX_GYRO_STDDEV_RADPS) return false;
         if (maximumComponent(accelStdDev) > MAX_ACCEL_STDDEV_MPS2) return false;
-        if (gravityMagnitude < MIN_GRAVITY_MAGNITUDE || gravityMagnitude > MAX_GRAVITY_MAGNITUDE)return false;
+        if (gravityMagnitude < MIN_GRAVITY_MAGNITUDE || gravityMagnitude > MAX_GRAVITY_MAGNITUDE) return false;
 
         return true;
-
     }
 
-    bool ImuCalibrator::apply( const RawImuSample& raw, CalibratedImuSample& calibrated) const
+    bool ImuCalibrator::apply(const RawImuSample& raw, CalibratedImuSample& calibrated) const
     {
-        if(state_ != State::Ready || !isValidRawSample(raw)) return false;
+        if (state_ != State::Ready || !isValidRawSample(raw)) return false;
 
         calibrated.timestamp_us = raw.timestamp_us;
         calibrated.sequence = raw.sequence;
@@ -152,11 +182,13 @@ namespace vbt::processing
         // Preserve acceleration in the body frame.
         // Gravity removal requires orientation compensation later.
         calibrated.accelerometer_mps2 = raw.accelerometer;
-        calibrated.gyroscope_radps = { raw.gyroscope.x - gyroBiasRadps_.x, raw.gyroscope.y - gyroBiasRadps_.y, raw.gyroscope.z - gyroBiasRadps_.z };
+        calibrated.gyroscope_radps = {
+            raw.gyroscope.x - gyroBiasRadps_.x,
+            raw.gyroscope.y - gyroBiasRadps_.y,
+            raw.gyroscope.z - gyroBiasRadps_.z
+        };
         calibrated.status = raw.status | SampleStatus::Calibrated;
 
         return true;
     }
-  
 }
-

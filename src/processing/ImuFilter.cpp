@@ -58,7 +58,7 @@ namespace vbt::processing
             {
                 const float dt = static_cast<float>(intervalUs) / 1000000.0f;
                 constexpr float TWO_PI = 6.28318530718f;
-                const float rc = 1.0f / (TWO_PI * CUTOFF_HZ);
+                const float rc = 1.0f / (TWO_PI * cutoffHz_);
                 const float alpha = dt / (rc + dt);
 
                 filteredAccelerometer_ = lowPass( filteredAccelerometer_, input.accelerometer_mps2, alpha);
