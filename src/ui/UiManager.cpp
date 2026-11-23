@@ -15,18 +15,18 @@ namespace
     Seeed_GFX display;
     // Shared reset is already handled by Board_XIAO_1inch47_Touch_Display; pass -1 for touch RST.
     Touch_AXS5106L touch(-1, vbt::ui::UiManager::PIN_TOUCH_IRQ, Wire, 172, 320);
-    constexpr uint16_t COLOR_BG        = TFT_DARKGREY;
-    constexpr uint16_t COLOR_CARD      = 0x18E3; // Dark slate
-    constexpr uint16_t COLOR_ACCENT    = TFT_CYAN;
-    constexpr uint16_t COLOR_START_BTN = 0x03E0; // Dark green
-    constexpr uint16_t COLOR_STOP_BG   = 0x3800; // Dark red
-    constexpr uint16_t COLOR_TEXT      = TFT_WHITE;
-    constexpr uint16_t COLOR_MUTED     = 0xBDF7; // Silver/gray
-    constexpr uint16_t COLOR_GOOD      = TFT_GREEN;
-    constexpr uint16_t COLOR_WARN      = TFT_YELLOW;
-    constexpr int16_t SCREEN_W = 172;
-    constexpr int16_t SCREEN_H = 320;
-    constexpr uint32_t DEBOUNCE_MS = 180;
+    constexpr uint16_t COLOR_BG          = TFT_DARKGREY;
+    constexpr uint16_t COLOR_CARD        = 0x18E3; // Dark slate
+    constexpr uint16_t COLOR_ACCENT      = TFT_CYAN;
+    constexpr uint16_t COLOR_START_BTN   = 0x03E0; // Dark green
+    constexpr uint16_t COLOR_STOP_BG     = 0x3800; // Dark red
+    constexpr uint16_t COLOR_TEXT        = TFT_WHITE;
+    constexpr uint16_t COLOR_MUTED       = 0xBDF7; // Silver/gray
+    constexpr uint16_t COLOR_GOOD        = TFT_GREEN;
+    constexpr uint16_t COLOR_WARN        = TFT_YELLOW;
+    constexpr int16_t SCREEN_W           = 172;
+    constexpr int16_t SCREEN_H           = 320;
+    constexpr uint32_t DEBOUNCE_MS       = 180;
     constexpr int32_t SWIPE_THRESHOLD_PX = 35;
 
     const char* modeTitle(vbt::ActivityMode mode)
@@ -67,6 +67,18 @@ namespace
 
 namespace vbt::ui
 {
+    void UiManager::startWebUI()
+    {
+        webUi_.begin();
+        forceRedraw_ = true;
+    }
+
+    void UiManager::stopWebUI()
+    {
+        webUi_.end();
+        forceRedraw_ = true;
+    }
+
     bool UiManager::begin()
     {
         pinMode(PIN_BTN_USR1, INPUT_PULLUP);
@@ -91,18 +103,29 @@ namespace vbt::ui
 
     void UiManager::cycleMode(int delta)
     {
-        constexpr int MODE_COUNT = 5;
-        int current = static_cast<int>(selectedMode_);
-        current = (current + delta + MODE_COUNT) % MODE_COUNT;
-        selectedMode_ = static_cast<ActivityMode>(current);
+        selectedCard_ = (selectedCard_ + delta + CARD_COUNT) % CARD_COUNT;
+        if (selectedCard_ < MODE_COUNT)
+        {
+            selectedMode_ = static_cast<ActivityMode>(selectedCard_);
+        }
         forceRedraw_ = true;
     }
 
-     void UiManager::handlePrimaryAction(SessionState state)
+    void UiManager::handlePrimaryAction(SessionState state)
     {
         switch (state)
         {
-            case SessionState::IdleModeSelect: vbt::runtime::requestStartSession(selectedMode_, true); break;
+            case SessionState::IdleModeSelect:
+                if (isSettingsCard())
+                {
+                    if (webUi_.isRunning()) stopWebUI();
+                    else startWebUI();
+                }
+                else
+                {
+                    vbt::runtime::requestStartSession(selectedMode_, true);
+                }
+                break;
             case SessionState::Calibrating:
             case SessionState::Recording:    vbt::runtime::requestStopSession(); break;
             case SessionState::ResultsReady: vbt::runtime::requestNextSet(); break;
@@ -209,20 +232,40 @@ namespace vbt::ui
 
     void UiManager::update()
     {
+        webUi_.update();
         pollButtons();
         const SessionState state = vbt::runtime::activeSessionState();
         pollTouch(state);
-        if (!forceRedraw_ && state == lastRenderedState_ && selectedMode_ == lastRenderedMode_) return;
+
+        // Keep selectedMode_ synced if a session was started remotely from the Phone Web UI.
+        if (state != SessionState::IdleModeSelect)
+        {
+            selectedMode_ = vbt::runtime::activeActivityMode();
+        }
+
+        if (!forceRedraw_ && state == lastRenderedState_ && selectedCard_ == lastRenderedCard_) return;
         
         lastRenderedState_ = state;
-        lastRenderedMode_ = selectedMode_;
+        lastRenderedCard_ = selectedCard_;
         forceRedraw_ = false;
         switch (state)
         {
-            case SessionState::IdleModeSelect: renderModeSelectCard(); break;
-            case SessionState::Calibrating:    renderCalibratingScreen(); break;
-            case SessionState::Recording:      renderRecordingScreen(); break;
-            case SessionState::ResultsReady:   renderResultsScreen(vbt::runtime::latestActivityResult()); break;
+            case SessionState::IdleModeSelect:
+                if (isSettingsCard()) renderSettingsCard();
+                else renderModeSelectCard();
+                digitalWrite(PIN_LCD_BL, HIGH);
+                break;
+            case SessionState::Calibrating:
+                renderCalibratingScreen();
+                digitalWrite(PIN_LCD_BL, HIGH);
+                break;
+            case SessionState::Recording:
+                digitalWrite(PIN_LCD_BL, LOW);
+                break;
+            case SessionState::ResultsReady:
+                renderResultsScreen(vbt::runtime::latestActivityResult());
+                digitalWrite(PIN_LCD_BL, HIGH);
+                break;
         }
     }
 
@@ -230,10 +273,10 @@ namespace vbt::ui
     {
         display.fillScreen(COLOR_BG);
 
-        for (int i = 0; i < 5; ++i)
+        for (int i = 0; i < CARD_COUNT; ++i)
         {
-            const int16_t cx = 46 + i * 20;
-            const uint16_t color = (i == static_cast<int>(selectedMode_)) ? COLOR_ACCENT : COLOR_CARD;
+            const int16_t cx = 36 + i * 20;
+            const uint16_t color = (i == selectedCard_) ? COLOR_ACCENT : COLOR_CARD;
             display.fillCircle(cx, 18, 4, color);
         }
 
@@ -249,11 +292,70 @@ namespace vbt::ui
         display.setTextSize(1);
         display.drawCentreString(modeSubtitle(selectedMode_), SCREEN_W / 2, 128, 1);
         display.drawCentreString(modeMountHint(selectedMode_), SCREEN_W / 2, 152, 1);
+
+        if (webUi_.isRunning())
+        {
+            display.setTextColor(COLOR_GOOD, COLOR_CARD);
+            display.drawCentreString("WIFI ON: vbt.local", SCREEN_W / 2, 180, 1);
+        }
+
         display.fillRoundRect(14, 225, SCREEN_W - 28, 65, 10, COLOR_START_BTN);
         display.drawRoundRect(14, 225, SCREEN_W - 28, 65, 10, COLOR_GOOD);
         display.setTextColor(COLOR_TEXT, COLOR_START_BTN);
         display.setTextSize(2);
         display.drawCentreString("START", SCREEN_W / 2, 242, 1);
+        display.setTextSize(1);
+        display.drawCentreString("TAP OR PRESS USR1", SCREEN_W / 2, 268, 1);
+    }
+
+    void UiManager::renderSettingsCard()
+    {
+        display.fillScreen(COLOR_BG);
+
+        for (int i = 0; i < CARD_COUNT; ++i)
+        {
+            const int16_t cx = 36 + i * 20;
+            const uint16_t color = (i == selectedCard_) ? COLOR_ACCENT : COLOR_CARD;
+            display.fillCircle(cx, 18, 4, color);
+        }
+
+        const bool wifiOn = webUi_.isRunning();
+
+        display.fillRoundRect(10, 34, SCREEN_W - 20, 170, 12, COLOR_CARD);
+        display.drawRoundRect(10, 34, SCREEN_W - 20, 170, 12, wifiOn ? COLOR_GOOD : COLOR_ACCENT);
+        display.setTextColor(COLOR_ACCENT, COLOR_CARD);
+        display.setTextSize(1);
+        display.drawCentreString("< SWIPE OR USR2 >", SCREEN_W / 2, 48, 1);
+        display.setTextColor(COLOR_TEXT, COLOR_CARD);
+        display.setTextSize(2);
+        display.drawCentreString("SETTINGS", SCREEN_W / 2, 74, 1);
+        display.setTextSize(1);
+
+        if (wifiOn)
+        {
+            display.setTextColor(COLOR_GOOD, COLOR_CARD);
+            display.drawCentreString("PHONE WEB UI: ON", SCREEN_W / 2, 114, 1);
+            display.setTextColor(COLOR_TEXT, COLOR_CARD);
+            display.drawCentreString("WiFi: VBT-Tracker", SCREEN_W / 2, 138, 1);
+            display.drawCentreString("Pass: 12345678", SCREEN_W / 2, 156, 1);
+            display.setTextColor(COLOR_ACCENT, COLOR_CARD);
+            display.drawCentreString("http://vbt.local", SCREEN_W / 2, 176, 1);
+        }
+        else
+        {
+            display.setTextColor(COLOR_MUTED, COLOR_CARD);
+            display.drawCentreString("PHONE WEB UI: OFF", SCREEN_W / 2, 120, 1);
+            display.drawCentreString("Wi-Fi radio powered off", SCREEN_W / 2, 148, 1);
+            display.drawCentreString("Max battery life", SCREEN_W / 2, 168, 1);
+        }
+
+        const uint16_t btnBg = wifiOn ? COLOR_STOP_BG : COLOR_START_BTN;
+        const uint16_t btnBorder = wifiOn ? COLOR_WARN : COLOR_GOOD;
+        display.fillRoundRect(14, 225, SCREEN_W - 28, 65, 10, btnBg);
+        display.drawRoundRect(14, 225, SCREEN_W - 28, 65, 10, btnBorder);
+        display.setTextColor(COLOR_TEXT, btnBg);
+        display.setTextSize(2);
+        display.drawCentreString(wifiOn ? "WIFI OFF" : "WIFI ON", SCREEN_W / 2, 242, 1);
         display.setTextSize(1);
         display.drawCentreString("TAP OR PRESS USR1", SCREEN_W / 2, 268, 1);
     }
@@ -301,6 +403,10 @@ namespace vbt::ui
         else if (result.mode == ActivityMode::StandingJump)
         {
             renderJumpResults(result);
+        }
+        else if (result.mode == ActivityMode::SprintContact)
+        {
+            renderSprintResults(result);
         }
         else
         {
@@ -409,6 +515,76 @@ namespace vbt::ui
             snprintf(buf, sizeof(buf), "J%lu: %.1fcm", static_cast<unsigned long>(i + 1), result.jump.jump_heights_cm[i]);
             display.drawString(buf, col, row);
         }
+    }
+
+    void UiManager::renderSprintResults(const ActivityOutput& result)
+    {
+        char buf[36];
+        display.setTextColor(COLOR_ACCENT, COLOR_BG);
+        display.setTextSize(1);
+        snprintf(buf, sizeof(buf), "SPRINT %lu (%lu STEPS)", static_cast<unsigned long>(result.set_number), static_cast<unsigned long>(result.sprint.step_count));
+        display.drawCentreString(buf, SCREEN_W / 2, 10, 1);
+
+        if (!result.sprint.valid || result.sprint.step_count == 0)
+        {
+            display.setTextColor(COLOR_WARN, COLOR_BG);
+            display.setTextSize(2);
+            display.drawCentreString("0 STEPS", SCREEN_W / 2, 100, 1);
+            display.setTextSize(1);
+            display.drawCentreString("Min 4 sprint steps", SCREEN_W / 2, 140, 1);
+            return;
+        }
+
+        // Hero card: Mean GCT + Min GCT & Mean Flight
+        display.fillRoundRect(8, 26, SCREEN_W - 16, 84, 8, COLOR_CARD);
+        display.setTextColor(COLOR_MUTED, COLOR_CARD);
+        display.setTextSize(1);
+        display.drawCentreString("MEAN GCT (ms)", SCREEN_W / 2, 32, 1);
+        display.setTextColor(COLOR_GOOD, COLOR_CARD);
+        display.setTextSize(3);
+        snprintf(buf, sizeof(buf), "%.0f", result.sprint.mean_contact_time_ms);
+        display.drawCentreString(buf, SCREEN_W / 2, 50, 1);
+        display.setTextColor(COLOR_TEXT, COLOR_CARD);
+        display.setTextSize(1);
+        snprintf(buf, sizeof(buf), "MIN:%.0fms  FLT:%.0fms", result.sprint.min_contact_time_ms, result.sprint.mean_flight_time_ms);
+        display.drawCentreString(buf, SCREEN_W / 2, 92, 1);
+
+        // 2x2 mini-cards: Step Freq, Asymmetry, Drift, Last Step
+        display.fillRoundRect(8, 120, 75, 62, 6, COLOR_CARD);
+        display.setTextColor(COLOR_MUTED, COLOR_CARD);
+        display.setTextSize(1);
+        display.drawCentreString("FREQ (Hz)", 45, 128, 1);
+        display.setTextColor(COLOR_TEXT, COLOR_CARD);
+        display.setTextSize(2);
+        snprintf(buf, sizeof(buf), "%.2f", result.sprint.step_frequency_hz);
+        display.drawCentreString(buf, 45, 150, 1);
+
+        display.fillRoundRect(89, 120, 75, 62, 6, COLOR_CARD);
+        display.setTextColor(COLOR_MUTED, COLOR_CARD);
+        display.setTextSize(1);
+        display.drawCentreString("ASYM (%)", 126, 128, 1);
+        display.setTextColor(result.sprint.odd_even_asymmetry_percent > 5.0f ? COLOR_WARN : COLOR_TEXT, COLOR_CARD);
+        display.setTextSize(2);
+        snprintf(buf, sizeof(buf), "%.1f", result.sprint.odd_even_asymmetry_percent);
+        display.drawCentreString(buf, 126, 150, 1);
+
+        display.fillRoundRect(8, 190, 75, 62, 6, COLOR_CARD);
+        display.setTextColor(COLOR_MUTED, COLOR_CARD);
+        display.setTextSize(1);
+        display.drawCentreString("DRIFT ms", 45, 198, 1);
+        display.setTextColor(result.sprint.contact_drift_ms > 5.0f ? COLOR_WARN : COLOR_TEXT, COLOR_CARD);
+        display.setTextSize(2);
+        snprintf(buf, sizeof(buf), "%+.0f", result.sprint.contact_drift_ms);
+        display.drawCentreString(buf, 45, 220, 1);
+
+        display.fillRoundRect(89, 190, 75, 62, 6, COLOR_CARD);
+        display.setTextColor(COLOR_MUTED, COLOR_CARD);
+        display.setTextSize(1);
+        display.drawCentreString("LAST ms", 126, 198, 1);
+        display.setTextColor(COLOR_TEXT, COLOR_CARD);
+        display.setTextSize(2);
+        snprintf(buf, sizeof(buf), "%.0f", result.sprint.last_contact_time_ms);
+        display.drawCentreString(buf, 126, 220, 1);
     }
 }
 

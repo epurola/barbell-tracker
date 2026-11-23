@@ -15,6 +15,7 @@
 #include "runtime/AcquisitionSchedule.h"
 #include "runtime/ImuSampleQueue.h"
 #include "ui/UiManager.h"
+#include "ui/HeadlessWebUi.h"
 
 namespace
 {

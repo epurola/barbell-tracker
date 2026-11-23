@@ -12,7 +12,7 @@ namespace vbt::processing
         static constexpr float ECCENTRIC_START_VELOCITY_MPS = -0.10f;
         static constexpr float CONCENTRIC_START_VELOCITY_MPS = 0.08f;
         static constexpr float CONCENTRIC_END_VELOCITY_MPS = 0.05f;
-        static constexpr float MIN_RANGE_OF_MOTION_M = 0.15f;
+        static constexpr float MIN_RANGE_OF_MOTION_M = 0.10f;
         static constexpr uint64_t MIN_CONCENTRIC_DURATION_US = 150000; // 150 ms
         static constexpr uint64_t MAX_PHASE_DURATION_US = 8000000;     // 8 s timeout
 

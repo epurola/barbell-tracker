@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <cstdint>
 #include "contracts/ModeTypes.h"
+#include "ui/HeadlessWebUi.h"
 
 #ifndef D15
 #define D15 42
@@ -34,15 +35,27 @@ namespace vbt::ui
             void handleSecondaryAction(SessionState state);
             void cycleMode(int delta);
             void renderModeSelectCard();
+            void renderSettingsCard();
             void renderCalibratingScreen();
             void renderRecordingScreen();
             void renderResultsScreen(const ActivityOutput& result);
             void renderBarbellResults(const ActivityOutput& result);
             void renderJumpResults(const ActivityOutput& result);
-            
+            void renderSprintResults(const ActivityOutput& result);
+
+            void startWebUI();
+            void stopWebUI();
+            bool isSettingsCard() const { return selectedCard_ == SETTINGS_CARD_INDEX; }
+
+            static constexpr int MODE_COUNT = 5;
+            static constexpr int SETTINGS_CARD_INDEX = MODE_COUNT;
+            static constexpr int CARD_COUNT = MODE_COUNT + 1;
+
+            HeadlessWebUi webUi_{};
+            int selectedCard_{0};
             ActivityMode selectedMode_{ActivityMode::BarbellVbt};
             SessionState lastRenderedState_{SessionState::ResultsReady};
-            ActivityMode lastRenderedMode_{ActivityMode::BlockStart};
+            int lastRenderedCard_{-1};
             bool forceRedraw_{true};
 
             bool prevUsr1Pressed_{false};
@@ -54,6 +67,5 @@ namespace vbt::ui
             int32_t touchStartY_{0};
             int32_t touchLastX_{0};
             int32_t touchLastY_{0};
-
     };
 }
