@@ -8,6 +8,7 @@
 #include <cstdio>
 
 #include "common/DebugLog.h"
+#include "runtime/GateReceiver.h"
 #include "runtime/RuntimeTasks.h"
 #include "runtime/TraceLogger.h"
 
@@ -185,6 +186,18 @@ namespace
                 default:
                     break;
             }
+
+            if (res.gates.count > 0)
+            {
+                JsonObject gates = doc["gates"].to<JsonObject>();
+                gates["n"]     = res.gates.count;
+                gates["total"] = res.gates.total_seconds;
+                JsonArray splits = gates["splits"].to<JsonArray>();
+                for (uint8_t i = 1; i < res.gates.count; ++i)
+                {
+                    splits.add(res.gates.split_seconds[i - 1]);
+                }
+            }
         }
 
         String json;
@@ -199,8 +212,8 @@ namespace vbt::ui
     {
         if (running_) return;
 
-        WiFi.mode(WIFI_AP);
-        WiFi.softAP(AP_SSID, AP_PASS);
+        WiFi.mode(vbt::runtime::gateReceiver().isRunning() ? WIFI_AP_STA : WIFI_AP);
+        WiFi.softAP(AP_SSID, AP_PASS, vbt::runtime::GateReceiver::WIFI_CHANNEL);
         MDNS.begin(MDNS_HOST);
         MDNS.addService("http", "tcp", 80);
 
@@ -222,7 +235,7 @@ namespace vbt::ui
         server.stop();
         MDNS.end();
         WiFi.softAPdisconnect(true);
-        WiFi.mode(WIFI_OFF);
+        WiFi.mode(vbt::runtime::gateReceiver().isRunning() ? WIFI_STA : WIFI_OFF);
         running_ = false;
     }
 

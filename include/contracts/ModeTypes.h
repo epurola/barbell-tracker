@@ -93,6 +93,15 @@ namespace vbt
         bool valid{false};
     };
 
+    struct GateSplitMetrics
+    {
+        static constexpr uint8_t MAX_GATES = 6;
+        uint8_t count{0};
+        uint64_t timestamps_us[MAX_GATES]{};
+        float split_seconds[MAX_GATES - 1]{};
+        float total_seconds{0.0f};
+    };
+
     struct ActivityOutput
     {
         ActivityMode mode{ActivityMode::BarbellVbt};
@@ -110,5 +119,6 @@ namespace vbt
         HurdleContactMetrics hurdle{};
         SprintContactMetrics sprint{};
         BlockStartMetrics block_start{};
+        GateSplitMetrics gates{};
     };
 }

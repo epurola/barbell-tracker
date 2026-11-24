@@ -13,6 +13,7 @@
 #include "imu/Lsm6ds3.h"
 #include "processing/ImuPipeline.h"
 #include "runtime/AcquisitionSchedule.h"
+#include "runtime/GateReceiver.h"
 #include "runtime/ImuSampleQueue.h"
 #include "runtime/TraceLogger.h"
 #include "ui/UiManager.h"
@@ -149,30 +150,43 @@ namespace
 
         const auto mode = static_cast<vbt::ActivityMode>(requestedMode.load(std::memory_order_relaxed));
 
+        auto usesGates = [](vbt::ActivityMode m) {
+            return m == vbt::ActivityMode::SprintContact || m == vbt::ActivityMode::BlockStart;
+        };
+
         switch (cmd)
         {
             case PendingCommand::StartCalibratedSession:
                 pipeline.startSession(mode, true);
                 traceLogger().reset(pipeline.mode());
+                if (usesGates(pipeline.mode())) { gateReceiver().begin(); gateReceiver().reset(); }
+                else { gateReceiver().end(); }
                 break;
             case PendingCommand::StartUncalibratedSession:
                 pipeline.startSession(mode, false);
                 traceLogger().reset(pipeline.mode());
+                if (usesGates(pipeline.mode())) { gateReceiver().begin(); gateReceiver().reset(); }
+                else { gateReceiver().end(); }
                 break;
             case PendingCommand::StartNextSet:
                 pipeline.startNextSet();
                 traceLogger().reset(pipeline.mode());
+                if (usesGates(pipeline.mode())) { gateReceiver().begin(); gateReceiver().reset(); }
+                else { gateReceiver().end(); }
                 break;
             case PendingCommand::StopSession:
             {
                 traceLogger().freeze();
                 vbt::ActivityOutput finalOutput{};
                 pipeline.stopSession(finalOutput);
+                finalOutput.gates = gateReceiver().snapshot();
+                gateReceiver().end();
                 publishActivityResult(finalOutput);
                 break;
             }
             case PendingCommand::ReturnToModeSelect:
                 traceLogger().freeze();
+                gateReceiver().end();
                 pipeline.returnToModeSelect();
                 break;
             default: break;

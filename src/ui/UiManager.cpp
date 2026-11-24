@@ -527,6 +527,18 @@ namespace vbt::ui
 
         if (!result.sprint.valid || result.sprint.step_count == 0)
         {
+            if (result.gates.count >= 2)
+            {
+                display.fillRoundRect(8, 56, SCREEN_W - 16, 94, 8, COLOR_CARD);
+                display.setTextColor(COLOR_MUTED, COLOR_CARD);
+                display.setTextSize(1);
+                display.drawCentreString("GATE SPLIT (s)", SCREEN_W / 2, 66, 1);
+                display.setTextColor(COLOR_GOOD, COLOR_CARD);
+                display.setTextSize(3);
+                snprintf(buf, sizeof(buf), "%.3f", result.gates.total_seconds);
+                display.drawCentreString(buf, SCREEN_W / 2, 92, 1);
+                return;
+            }
             display.setTextColor(COLOR_WARN, COLOR_BG);
             display.setTextSize(2);
             display.drawCentreString("0 STEPS", SCREEN_W / 2, 100, 1);
@@ -580,11 +592,22 @@ namespace vbt::ui
         display.fillRoundRect(89, 190, 75, 62, 6, COLOR_CARD);
         display.setTextColor(COLOR_MUTED, COLOR_CARD);
         display.setTextSize(1);
-        display.drawCentreString("LAST ms", 126, 198, 1);
-        display.setTextColor(COLOR_TEXT, COLOR_CARD);
-        display.setTextSize(2);
-        snprintf(buf, sizeof(buf), "%.0f", result.sprint.last_contact_time_ms);
-        display.drawCentreString(buf, 126, 220, 1);
+        if (result.gates.count >= 2)
+        {
+            display.drawCentreString("GATE (s)", 126, 198, 1);
+            display.setTextColor(COLOR_GOOD, COLOR_CARD);
+            display.setTextSize(2);
+            snprintf(buf, sizeof(buf), "%.2f", result.gates.total_seconds);
+            display.drawCentreString(buf, 126, 220, 1);
+        }
+        else
+        {
+            display.drawCentreString("LAST ms", 126, 198, 1);
+            display.setTextColor(COLOR_TEXT, COLOR_CARD);
+            display.setTextSize(2);
+            snprintf(buf, sizeof(buf), "%.0f", result.sprint.last_contact_time_ms);
+            display.drawCentreString(buf, 126, 220, 1);
+        }
     }
 }
 

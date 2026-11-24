@@ -122,7 +122,21 @@ function render(d){
       '<table class="tbl"><thead><tr><th>Jump</th><th>Height</th><th>% Best</th></tr></thead><tbody>'+rows+'</tbody></table>';
   } else if(d.mode===3){
     const s=d.sprint;
-    if(!s.valid||!s.n){ out.innerHTML='<div class="hero-val warn" style="font-size:32px">0 STEPS</div><div class="sub">Min 4 sprint steps</div>'; return; }
+    const g=d.gates;
+    let gateHtml='';
+    if(g&&g.n>=2){
+      let grows='';
+      for(let i=0;i<g.splits.length;i++) grows+='<tr><td>Split '+(i+1)+'</td><td><b>'+g.splits[i].toFixed(3)+' s</b></td></tr>';
+      gateHtml='<table class="tbl"><thead><tr><th>Gate Split</th><th>Time</th></tr></thead><tbody>'+grows+
+        '<tr><td><b>Total</b></td><td class="good"><b>'+g.total.toFixed(3)+' s</b></td></tr></tbody></table>';
+    } else if(g&&g.n===1){
+      gateHtml='<div class="sub" style="margin-top:10px">1 gate hit — need 2+ gates for split</div>';
+    }
+    if(!s.valid||!s.n){
+      if(gateHtml){ out.innerHTML='<div class="hero-label">Timing Gates — Total</div><div class="hero-val">'+g.total.toFixed(3)+' <span style="font-size:18px">s</span></div>'+gateHtml; return; }
+      out.innerHTML='<div class="hero-val warn" style="font-size:32px">0 STEPS</div><div class="sub">Min 4 sprint steps</div>';
+      return;
+    }
     out.innerHTML='<div class="hero-label">Sprint '+d.set+' ('+s.n+' Steps) — Mean GCT</div>'+
       '<div class="hero-val">'+s.mean.toFixed(0)+' <span style="font-size:18px">ms</span></div>'+
       '<div class="stats">'+
@@ -134,7 +148,7 @@ function render(d){
         '<div class="stat"><div class="k">Last Step</div><div class="v">'+s.last.toFixed(0)+' ms</div></div>'+
         '<div class="stat"><div class="k">Run Time</div><div class="v">'+s.durS.toFixed(2)+' s</div></div>'+
         '<div class="stat"><div class="k">Total Steps</div><div class="v">'+s.n+'</div></div>'+
-      '</div>';
+      '</div>'+gateHtml;
   }
 }
 async function poll(){
