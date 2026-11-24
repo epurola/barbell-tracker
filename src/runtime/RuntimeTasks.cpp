@@ -14,6 +14,7 @@
 #include "processing/ImuPipeline.h"
 #include "runtime/AcquisitionSchedule.h"
 #include "runtime/ImuSampleQueue.h"
+#include "runtime/TraceLogger.h"
 #include "ui/UiManager.h"
 #include "ui/HeadlessWebUi.h"
 
@@ -150,17 +151,30 @@ namespace
 
         switch (cmd)
         {
-            case PendingCommand::StartCalibratedSession:   pipeline.startSession(mode, true); break;
-            case PendingCommand::StartUncalibratedSession: pipeline.startSession(mode, false); break;
-            case PendingCommand::StartNextSet:             pipeline.startNextSet(); break;
+            case PendingCommand::StartCalibratedSession:
+                pipeline.startSession(mode, true);
+                traceLogger().reset(pipeline.mode());
+                break;
+            case PendingCommand::StartUncalibratedSession:
+                pipeline.startSession(mode, false);
+                traceLogger().reset(pipeline.mode());
+                break;
+            case PendingCommand::StartNextSet:
+                pipeline.startNextSet();
+                traceLogger().reset(pipeline.mode());
+                break;
             case PendingCommand::StopSession:
             {
+                traceLogger().freeze();
                 vbt::ActivityOutput finalOutput{};
                 pipeline.stopSession(finalOutput);
                 publishActivityResult(finalOutput);
                 break;
             }
-            case PendingCommand::ReturnToModeSelect: pipeline.returnToModeSelect(); break;
+            case PendingCommand::ReturnToModeSelect:
+                traceLogger().freeze();
+                pipeline.returnToModeSelect();
+                break;
             default: break;
         }
 
@@ -245,6 +259,8 @@ namespace
                 vbt::ActivityOutput activity{};
                 if (pipeline.process(sample, kinematics, activity))
                 {
+                    const bool stationary = vbt::hasStatus(kinematics.status, vbt::SampleStatus::Stationary);
+                    traceLogger().record(kinematics, pipeline.activePhaseCode(), stationary, activity.completed);
                     effortInProgress.store(activity.effort_in_progress, std::memory_order_relaxed);
                     if (activity.completed) publishActivityResult(activity);
                 }

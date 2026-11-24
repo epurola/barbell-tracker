@@ -8,8 +8,10 @@
 
 #include "common/DebugLog.h"
 #include "runtime/RuntimeTasks.h"
+#include "runtime/TraceLogger.h"
 
 extern const char index_html_start[] asm("_binary_web_index_html_start");
+extern const char trace_html_start[] asm("_binary_web_trace_html_start");
 
 namespace
 {
@@ -22,6 +24,61 @@ namespace
     void handleRoot()
     {
         server.send(200, "text/html", index_html_start);
+    }
+
+    void handleTracePage()
+    {
+        server.send(200, "text/html", trace_html_start);
+    }
+
+    void handleTraceCsv()
+    {
+        const auto& logger = vbt::runtime::traceLogger();
+        if (!logger.isFrozen())
+        {
+            server.send(409, "text/plain", "Recording in progress — stop set first");
+            return;
+        }
+
+        const size_t total = logger.count();
+
+        server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+        server.send(200, "text/csv", "");
+
+        String chunk;
+        chunk.reserve(1024);
+
+        char line[64];
+        snprintf(line, sizeof(line), "#mode=%u\nt,az,vz,pz,ph,st,ev\n", static_cast<unsigned>(logger.mode()));
+        chunk += line;
+
+        vbt::runtime::TraceSample s{};
+        for (size_t i = 0; i < total; ++i)
+        {
+            if (!logger.sampleAt(i, s)) continue;
+
+            snprintf(line, sizeof(line), "%lu,%.2f,%.3f,%.1f,%u,%u,%u\n",
+                static_cast<unsigned long>(s.dt_ms),
+                static_cast<float>(s.az_cmps2) * 0.01f,
+                static_cast<float>(s.vz_mmps) * 0.001f,
+                static_cast<float>(s.pz_mm) * 0.1f,
+                static_cast<unsigned>(s.phase),
+                static_cast<unsigned>((s.flags & vbt::runtime::TraceLogger::FLAG_STATIONARY) ? 1u : 0u),
+                static_cast<unsigned>((s.flags & vbt::runtime::TraceLogger::FLAG_COMPLETED) ? 1u : 0u));
+            chunk += line;
+
+            if (chunk.length() >= 900)
+            {
+                server.sendContent(chunk);
+                chunk = "";
+            }
+        }
+
+        if (chunk.length() > 0)
+        {
+            server.sendContent(chunk);
+        }
+        server.sendContent("");
     }
 
     void handleCmd()
@@ -138,6 +195,8 @@ namespace vbt::ui
         MDNS.addService("http", "tcp", 80);
 
         server.on("/", HTTP_GET, handleRoot);
+        server.on("/trace", HTTP_GET, handleTracePage);
+        server.on("/trace.csv", HTTP_GET, handleTraceCsv);
         server.on("/cmd", HTTP_GET, handleCmd);
         server.on("/status", HTTP_GET, handleStatus);
         server.begin();

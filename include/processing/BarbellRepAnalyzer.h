@@ -18,6 +18,7 @@ namespace vbt::processing
 
         ActivityMode mode() const override { return ActivityMode::BarbellVbt; }
         bool isEffortInProgress() const override { return phase_ != RepPhase::Idle; }
+        uint8_t phaseCode() const override { return static_cast<uint8_t>(phase_); }
 
         RepPhase phase() const { return phase_; }
         uint32_t repCount() const { return repCount_; }

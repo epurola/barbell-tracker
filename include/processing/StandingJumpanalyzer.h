@@ -28,6 +28,7 @@ namespace vbt::processing
 
         ActivityMode mode() const override { return ActivityMode::StandingJump; }
         bool isEffortInProgress() const override { return phase_ != Phase::Idle; }
+        uint8_t phaseCode() const override { return static_cast<uint8_t>(phase_); }
 
         Phase phase() const { return phase_; }
         uint32_t jumpCount() const { return jumpCount_; }

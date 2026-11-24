@@ -14,6 +14,7 @@ namespace vbt::processing
 
         virtual ActivityMode mode() const = 0;
         virtual bool isEffortInProgress() const = 0;
+        virtual uint8_t phaseCode() const { return 0; }
 
         void reset()
         {
