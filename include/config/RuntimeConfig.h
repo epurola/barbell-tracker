@@ -20,7 +20,7 @@ namespace vbt::runtime
     constexpr uint32_t ACQUISITION_STACK_BYTES = 4096;
     constexpr uint32_t PROCESSING_STACK_BYTES = 4096;
     constexpr uint32_t TELEMETRY_STACK_BYTES= 3072;
-    constexpr uint32_t UI_STACK_BYTES = 6144;
+    constexpr uint32_t UI_STACK_BYTES = 8192;
 
     constexpr uint32_t ACQUISITION_RATE_HZ = 500;
     constexpr uint64_t ACQUISITION_PERIOD_US = 2000;

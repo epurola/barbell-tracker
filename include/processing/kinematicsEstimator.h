@@ -8,9 +8,9 @@ namespace vbt::processing
     {
     public:
         static constexpr float GRAVITY_MPS2 = 9.80665f;
-        static constexpr float STATIONARY_ACCEL_THRESHOLD_MPS2 = 0.25f;
+        static constexpr float STATIONARY_ACCEL_THRESHOLD_MPS2 = 0.18f;
         static constexpr float STATIONARY_GYRO_THRESHOLD_RADPS = 0.10f;
-        static constexpr uint32_t STATIONARY_HOLD_SAMPLES = 50; // 100 ms at 500 Hz
+        static constexpr uint32_t STATIONARY_HOLD_SAMPLES = 150; // 300 ms at 500 Hz
         static constexpr uint64_t MAX_SAMPLE_INTERVAL_US = 50000;
 
         bool update(const FilteredImuSample& imuSample, const OrientationState& orientationState, KinematicSample& output);

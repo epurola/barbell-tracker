@@ -21,13 +21,14 @@ namespace vbt::processing
         static constexpr float PUSH_START_ACCEL_MPS2 = 3.0f;
         static constexpr float MIN_TAKEOFF_VELOCITY_MPS = 1.0f;
         static constexpr float TAKEOFF_FREEFALL_ACCEL_MPS2 = -7.5f;
-        static constexpr float LANDING_IMPACT_ACCEL_MPS2 = 12.0f;
+        static constexpr float LANDING_IMPACT_ACCEL_MPS2 = -5.0f;
         static constexpr uint64_t MIN_FLIGHT_TIME_US = 200000;          // 200 ms (~4.9 cm)
         static constexpr uint64_t MAX_FLIGHT_TIME_US = 1200000;         // 1.2 s safety limit
         static constexpr uint64_t MAX_PROPULSION_DURATION_US = 2500000; // 2.5 s timeout
 
         ActivityMode mode() const override { return ActivityMode::StandingJump; }
         bool isEffortInProgress() const override { return phase_ != Phase::Idle; }
+        uint8_t phaseCode() const override { return static_cast<uint8_t>(phase_); }
 
         Phase phase() const { return phase_; }
         uint32_t jumpCount() const { return jumpCount_; }

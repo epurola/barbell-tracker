@@ -64,6 +64,7 @@ namespace vbt::processing
         SessionState sessionState() const { return sessionState_; }
         uint32_t setNumber() const { return setNumber_; }
         bool isEffortInProgress() const { return activeAnalyzer_->isEffortInProgress(); }
+        uint8_t activePhaseCode() const { return activeAnalyzer_->phaseCode(); }
 
         ImuCalibrator::State calibrationState() const { return calibrator_.state(); }
         const PipelineCounters& counters() const { return counters_; }

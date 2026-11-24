@@ -12,12 +12,13 @@ namespace vbt::processing
         static constexpr float ECCENTRIC_START_VELOCITY_MPS = -0.10f;
         static constexpr float CONCENTRIC_START_VELOCITY_MPS = 0.08f;
         static constexpr float CONCENTRIC_END_VELOCITY_MPS = 0.05f;
-        static constexpr float MIN_RANGE_OF_MOTION_M = 0.15f;
+        static constexpr float MIN_RANGE_OF_MOTION_M = 0.10f;
         static constexpr uint64_t MIN_CONCENTRIC_DURATION_US = 150000; // 150 ms
         static constexpr uint64_t MAX_PHASE_DURATION_US = 8000000;     // 8 s timeout
 
         ActivityMode mode() const override { return ActivityMode::BarbellVbt; }
         bool isEffortInProgress() const override { return phase_ != RepPhase::Idle; }
+        uint8_t phaseCode() const override { return static_cast<uint8_t>(phase_); }
 
         RepPhase phase() const { return phase_; }
         uint32_t repCount() const { return repCount_; }
