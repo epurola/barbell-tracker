@@ -67,9 +67,9 @@
 <script>
 const MODES = {
   0: { name:'Barbell VBT', sig:'vz',
-       phases:['Idle','Eccentric','Concentric','Lockout'],
-       band:['transparent','rgba(250,204,21,0.12)','rgba(74,222,128,0.16)','rgba(56,189,248,0.12)'],
-       dot:['#94a3b8','#facc15','#4ade80','#38bdf8'],
+       phases:['Idle','Eccentric','Concentric'],
+       band:['transparent','rgba(250,204,21,0.12)','rgba(74,222,128,0.16)'],
+       dot:['#94a3b8','#facc15','#4ade80'],
        thresh:{ vz:[{v:-0.10,l:'Ecc -0.10',c:'#facc15'},{v:0.08,l:'Conc +0.08',c:'#4ade80'},{v:0.05,l:'End +0.05',c:'#f87171'}] } },
   1: { name:'Standing Jump', sig:'az',
        phases:['Idle','Propulsion','Flight'],

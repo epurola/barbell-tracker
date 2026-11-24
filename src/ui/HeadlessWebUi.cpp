@@ -104,8 +104,7 @@ namespace
         json.reserve(768);
 
         char buf[224];
-        snprintf(buf, sizeof(buf), "{\"state\":%u,\"mode\":%u,\"set\":%lu,",
-            state, mode, static_cast<unsigned long>(res.set_number));
+        snprintf(buf, sizeof(buf), "{\"state\":%u,\"mode\":%u,\"set\":%lu,", state, mode, static_cast<unsigned long>(res.set_number));
         json += buf;
 
         // Barbell rep block
@@ -202,8 +201,7 @@ namespace vbt::ui
         server.begin();
         running_ = true;
 
-        VBT_LOGF("[WIFI] AP Ready! SSID: %s  Pass: %s  URL: http://%s.local (http://%s)\n",
-            AP_SSID, AP_PASS, MDNS_HOST, WiFi.softAPIP().toString().c_str());
+        VBT_LOGF("[WIFI] AP Ready! SSID: %s  Pass: %s  URL: http://%s.local (http://%s)\n", AP_SSID, AP_PASS, MDNS_HOST, WiFi.softAPIP().toString().c_str());
     }
 
     void HeadlessWebUi::end()

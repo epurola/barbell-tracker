@@ -8,8 +8,7 @@ namespace vbt
     {
         Idle = 0,
         Eccentric,
-        Concentric,
-        Lockout
+        Concentric
     };
 
     struct RepMetrics

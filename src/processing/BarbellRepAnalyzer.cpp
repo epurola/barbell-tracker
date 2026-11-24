@@ -86,7 +86,7 @@ namespace vbt::processing
             completed.velocity_loss_percent = (drop > 0.0f) ? (100.0f * drop / completed.best_mean_velocity_mps) : 0.0f;
         }
 
-        completed.phase = RepPhase::Lockout;
+        completed.phase = RepPhase::Idle;
         completed.valid = true;
 
         lastCompletedRep_ = completed;
@@ -140,7 +140,6 @@ namespace vbt::processing
                 }
                 break;
 
-            case RepPhase::Lockout:
             default:
                 resetCurrentRep();
                 break;
