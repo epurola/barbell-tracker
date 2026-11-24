@@ -1,6 +1,7 @@
 #include "ui/HeadlessWebUi.h"
 
 #include <Arduino.h>
+#include <ArduinoJson.h>
 #include <ESPmDNS.h>
 #include <WebServer.h>
 #include <WiFi.h>
@@ -96,88 +97,98 @@ namespace
 
     void handleStatus()
     {
-        const auto state = static_cast<unsigned>(vbt::runtime::activeSessionState());
-        const auto mode = static_cast<unsigned>(vbt::runtime::activeActivityMode());
-        const vbt::ActivityOutput res = vbt::runtime::latestActivityResult();
+        const vbt::SessionState state = vbt::runtime::activeSessionState();
+        const vbt::ActivityMode mode  = vbt::runtime::activeActivityMode();
+
+        JsonDocument doc;
+        doc["state"] = static_cast<unsigned>(state);
+        doc["mode"]  = static_cast<unsigned>(mode);
+
+        if (state == vbt::SessionState::ResultsReady)
+        {
+            const vbt::ActivityOutput res = vbt::runtime::latestActivityResult();
+            doc["mode"] = static_cast<unsigned>(res.mode);
+            doc["set"]  = res.set_number;
+
+            switch (res.mode)
+            {
+                case vbt::ActivityMode::BarbellVbt:
+                {
+                    const float concMs = (res.rep.concentric_end_us > res.rep.concentric_start_us)
+                        ? static_cast<float>(res.rep.concentric_end_us - res.rep.concentric_start_us) / 1000.0f
+                        : 0.0f;
+                    const float eccMs = (res.rep.concentric_start_us > res.rep.start_timestamp_us)
+                        ? static_cast<float>(res.rep.concentric_start_us - res.rep.start_timestamp_us) / 1000.0f
+                        : 0.0f;
+
+                    JsonObject rep = doc["rep"].to<JsonObject>();
+                    rep["n"]      = res.rep.rep_number;
+                    rep["best"]   = res.rep.best_mean_velocity_mps;
+                    rep["avg"]    = res.rep.set_mean_velocity_mps;
+                    rep["pk"]     = res.rep.peak_concentric_velocity_mps;
+                    rep["acc"]    = res.rep.peak_concentric_accel_mps2;
+                    rep["loss"]   = res.rep.velocity_loss_percent;
+                    rep["rom"]    = res.rep.range_of_motion_m * 100.0f;
+                    rep["concMs"] = concMs;
+                    rep["eccMs"]  = eccMs;
+
+                    JsonArray repList = rep["list"].to<JsonArray>();
+                    JsonArray pkList  = rep["pkList"].to<JsonArray>();
+                    const uint32_t repCount = res.rep.rep_number < vbt::RepMetrics::MAX_SET_REPS ? res.rep.rep_number : vbt::RepMetrics::MAX_SET_REPS;
+                    for (uint32_t i = 0; i < repCount; ++i)
+                    {
+                        repList.add(res.rep.rep_mean_velocity_mps[i]);
+                        pkList.add(res.rep.rep_peak_velocity_mps[i]);
+                    }
+                    break;
+                }
+
+                case vbt::ActivityMode::StandingJump:
+                {
+                    JsonObject jump = doc["jump"].to<JsonObject>();
+                    jump["n"]     = res.jump.jump_number;
+                    jump["best"]  = res.jump.best_jump_height_cm;
+                    jump["avg"]   = res.jump.mean_jump_height_cm;
+                    jump["flt"]   = res.jump.flight_time_ms;
+                    jump["toVel"] = res.jump.takeoff_velocity_mps;
+                    jump["pkVel"] = res.jump.peak_velocity_mps;
+
+                    JsonArray jumpList = jump["list"].to<JsonArray>();
+                    const uint32_t jumpCount = res.jump.jump_number < vbt::JumpMetrics::MAX_SET_JUMPS ? res.jump.jump_number : vbt::JumpMetrics::MAX_SET_JUMPS;
+                    for (uint32_t i = 0; i < jumpCount; ++i)
+                    {
+                        jumpList.add(res.jump.jump_heights_cm[i]);
+                    }
+                    break;
+                }
+
+                case vbt::ActivityMode::SprintContact:
+                {
+                    const float sprintDurS = (res.sprint.sprint_end_timestamp_us > res.sprint.sprint_start_timestamp_us)
+                        ? static_cast<float>(res.sprint.sprint_end_timestamp_us - res.sprint.sprint_start_timestamp_us) / 1000000.0f
+                        : 0.0f;
+
+                    JsonObject sprint = doc["sprint"].to<JsonObject>();
+                    sprint["valid"] = res.sprint.valid;
+                    sprint["n"]     = res.sprint.step_count;
+                    sprint["mean"]  = res.sprint.mean_contact_time_ms;
+                    sprint["min"]   = res.sprint.min_contact_time_ms;
+                    sprint["flt"]   = res.sprint.mean_flight_time_ms;
+                    sprint["freq"]  = res.sprint.step_frequency_hz;
+                    sprint["asym"]  = res.sprint.odd_even_asymmetry_percent;
+                    sprint["drift"] = res.sprint.contact_drift_ms;
+                    sprint["last"]  = res.sprint.last_contact_time_ms;
+                    sprint["durS"]  = sprintDurS;
+                    break;
+                }
+
+                default:
+                    break;
+            }
+        }
 
         String json;
-        json.reserve(768);
-
-        char buf[224];
-        snprintf(buf, sizeof(buf), "{\"state\":%u,\"mode\":%u,\"set\":%lu,", state, mode, static_cast<unsigned long>(res.set_number));
-        json += buf;
-
-        // Barbell rep block
-        const float concMs = (res.rep.concentric_end_us > res.rep.concentric_start_us)
-            ? static_cast<float>(res.rep.concentric_end_us - res.rep.concentric_start_us) / 1000.0f
-            : 0.0f;
-        const float eccMs = (res.rep.concentric_start_us > res.rep.start_timestamp_us)
-            ? static_cast<float>(res.rep.concentric_start_us - res.rep.start_timestamp_us) / 1000.0f
-            : 0.0f;
-
-        snprintf(buf, sizeof(buf), "\"rep\":{\"n\":%lu,\"best\":%.2f,\"avg\":%.2f,\"pk\":%.2f,\"acc\":%.1f,\"loss\":%.1f,\"rom\":%.1f,\"concMs\":%.0f,\"eccMs\":%.0f,\"list\":[",
-            static_cast<unsigned long>(res.rep.rep_number),
-            res.rep.best_mean_velocity_mps,
-            res.rep.set_mean_velocity_mps,
-            res.rep.peak_concentric_velocity_mps,
-            res.rep.peak_concentric_accel_mps2,
-            res.rep.velocity_loss_percent,
-            res.rep.range_of_motion_m * 100.0f,
-            concMs,
-            eccMs);
-        json += buf;
-        const uint32_t repCount = res.rep.rep_number < vbt::RepMetrics::MAX_SET_REPS ? res.rep.rep_number : vbt::RepMetrics::MAX_SET_REPS;
-        for (uint32_t i = 0; i < repCount; ++i)
-        {
-            if (i > 0) json += ',';
-            snprintf(buf, sizeof(buf), "%.2f", res.rep.rep_mean_velocity_mps[i]);
-            json += buf;
-        }
-        json += "],\"pkList\":[";
-        for (uint32_t i = 0; i < repCount; ++i)
-        {
-            if (i > 0) json += ',';
-            snprintf(buf, sizeof(buf), "%.2f", res.rep.rep_peak_velocity_mps[i]);
-            json += buf;
-        }
-        json += "]},";
-
-        // Jump block
-        snprintf(buf, sizeof(buf), "\"jump\":{\"n\":%lu,\"best\":%.1f,\"avg\":%.1f,\"flt\":%.0f,\"toVel\":%.2f,\"pkVel\":%.2f,\"list\":[",
-            static_cast<unsigned long>(res.jump.jump_number),
-            res.jump.best_jump_height_cm,
-            res.jump.mean_jump_height_cm,
-            res.jump.flight_time_ms,
-            res.jump.takeoff_velocity_mps,
-            res.jump.peak_velocity_mps);
-        json += buf;
-        const uint32_t jumpCount = res.jump.jump_number < vbt::JumpMetrics::MAX_SET_JUMPS ? res.jump.jump_number : vbt::JumpMetrics::MAX_SET_JUMPS;
-        for (uint32_t i = 0; i < jumpCount; ++i)
-        {
-            if (i > 0) json += ',';
-            snprintf(buf, sizeof(buf), "%.1f", res.jump.jump_heights_cm[i]);
-            json += buf;
-        }
-        json += "]},";
-
-        // Sprint block
-        const float sprintDurS = (res.sprint.sprint_end_timestamp_us > res.sprint.sprint_start_timestamp_us)
-            ? static_cast<float>(res.sprint.sprint_end_timestamp_us - res.sprint.sprint_start_timestamp_us) / 1000000.0f
-            : 0.0f;
-
-        snprintf(buf, sizeof(buf), "\"sprint\":{\"valid\":%s,\"n\":%lu,\"mean\":%.1f,\"min\":%.1f,\"flt\":%.1f,\"freq\":%.2f,\"asym\":%.1f,\"drift\":%.1f,\"last\":%.1f,\"durS\":%.2f}}",
-            res.sprint.valid ? "true" : "false",
-            static_cast<unsigned long>(res.sprint.step_count),
-            res.sprint.mean_contact_time_ms,
-            res.sprint.min_contact_time_ms,
-            res.sprint.mean_flight_time_ms,
-            res.sprint.step_frequency_hz,
-            res.sprint.odd_even_asymmetry_percent,
-            res.sprint.contact_drift_ms,
-            res.sprint.last_contact_time_ms,
-            sprintDurS);
-        json += buf;
-
+        serializeJson(doc, json);
         server.send(200, "application/json", json);
     }
 }
