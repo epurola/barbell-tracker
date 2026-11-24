@@ -465,4 +465,14 @@ namespace vbt::runtime
         portEXIT_CRITICAL(&resultSnapshotMux);
         return copy;
     }
+
+    void sleepImu()
+    {
+        if (acquisitionTimer != nullptr)
+        {
+            esp_timer_stop(acquisitionTimer);
+        }
+        delay(10); // Allow any in-flight Core 1 I2C transaction to finish cleanly.
+        imuSensor.sleep();
+    }
 }

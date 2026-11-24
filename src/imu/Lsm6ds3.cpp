@@ -101,6 +101,14 @@ namespace vbt::imu
         return true;
     }
 
+    void Lsm6ds3::sleep()
+    {
+        if (!initialized_ || wire_ == nullptr) return;
+        writeRegister(REG_CTRL1_XL, 0x00); // Accelerometer power-down
+        writeRegister(REG_CTLR2_G, 0x00);  // Gyroscope power-down
+        initialized_ = false;
+    }
+
     bool Lsm6ds3::readRegister(uint8_t reg, uint8_t& value)
     {
         if(wire_ == nullptr) return false;

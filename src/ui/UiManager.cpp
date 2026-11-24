@@ -5,9 +5,14 @@
 #include "driver/tft/Driver_JD9853A.h"
 #include "panel/Panel_TFT.h"
 #include "touch/Touch_AXS5106L.h"
+#include <WiFi.h>
 #include <cmath>
 #include <cstdio>
+#include <driver/gpio.h>
+#include <driver/rtc_io.h>
+#include <esp_sleep.h>
 #include "common/DebugLog.h"
+#include "runtime/GateReceiver.h"
 #include "runtime/RuntimeTasks.h"
 
 namespace
@@ -79,8 +84,36 @@ namespace vbt::ui
         forceRedraw_ = true;
     }
 
+    void UiManager::enterDeepSleep()
+    {
+        VBT_LOGLN("[SLEEP] Entering deep sleep (press USR1 to wake)");
+
+        // 1. Shut down Wi-Fi & ESP-NOW
+        webUi_.end();
+        vbt::runtime::gateReceiver().end();
+        WiFi.mode(WIFI_OFF);
+
+        // 2. Turn off LCD backlight and hold it LOW during deep sleep
+        digitalWrite(PIN_LCD_BL, LOW);
+        gpio_hold_en(static_cast<gpio_num_t>(PIN_LCD_BL));
+
+        // 3. Stop 500 Hz acquisition timer and power down LSM6DS3 (~3 uA)
+        vbt::runtime::sleepImu();
+
+        // 4. Wake on USR1 (GPIO 11, active LOW)
+        const auto wakePin = static_cast<gpio_num_t>(PIN_BTN_USR1);
+        rtc_gpio_pullup_en(wakePin);
+        rtc_gpio_pulldown_dis(wakePin);
+        esp_sleep_enable_ext0_wakeup(wakePin, 0);
+
+        delay(250); // Let touch/button release cleanly before sleeping
+        esp_deep_sleep_start();
+    }
+
     bool UiManager::begin()
     {
+        gpio_hold_dis(static_cast<gpio_num_t>(PIN_LCD_BL));
+        rtc_gpio_deinit(static_cast<gpio_num_t>(PIN_BTN_USR1));
         pinMode(PIN_BTN_USR1, INPUT_PULLUP);
         pinMode(PIN_BTN_USR2, INPUT_PULLUP);
 
@@ -215,9 +248,17 @@ namespace vbt::ui
                 cycleMode(-1);
                 return;
             }
-            if (std::abs(dx) < 20 && std::abs(dy) < 20 && touchLastY_ >= 210)
+            if (std::abs(dx) < 20 && std::abs(dy) < 20)
             {
-                handlePrimaryAction(state);
+                if (isSettingsCard())
+                {
+                    if (touchLastY_ >= 252) enterDeepSleep();
+                    else if (touchLastY_ >= 192) handlePrimaryAction(state);
+                }
+                else if (touchLastY_ >= 210)
+                {
+                    handlePrimaryAction(state);
+                }
             }
         }
         else if (state == SessionState::ResultsReady)
@@ -321,43 +362,53 @@ namespace vbt::ui
 
         const bool wifiOn = webUi_.isRunning();
 
-        display.fillRoundRect(10, 34, SCREEN_W - 20, 170, 12, COLOR_CARD);
-        display.drawRoundRect(10, 34, SCREEN_W - 20, 170, 12, wifiOn ? COLOR_GOOD : COLOR_ACCENT);
+        display.fillRoundRect(10, 32, SCREEN_W - 20, 152, 12, COLOR_CARD);
+        display.drawRoundRect(10, 32, SCREEN_W - 20, 152, 12, wifiOn ? COLOR_GOOD : COLOR_ACCENT);
         display.setTextColor(COLOR_ACCENT, COLOR_CARD);
         display.setTextSize(1);
-        display.drawCentreString("< SWIPE OR USR2 >", SCREEN_W / 2, 48, 1);
+        display.drawCentreString("< SWIPE OR USR2 >", SCREEN_W / 2, 44, 1);
         display.setTextColor(COLOR_TEXT, COLOR_CARD);
         display.setTextSize(2);
-        display.drawCentreString("SETTINGS", SCREEN_W / 2, 74, 1);
+        display.drawCentreString("SETTINGS", SCREEN_W / 2, 66, 1);
         display.setTextSize(1);
 
         if (wifiOn)
         {
             display.setTextColor(COLOR_GOOD, COLOR_CARD);
-            display.drawCentreString("PHONE WEB UI: ON", SCREEN_W / 2, 114, 1);
+            display.drawCentreString("PHONE WEB UI: ON", SCREEN_W / 2, 102, 1);
             display.setTextColor(COLOR_TEXT, COLOR_CARD);
-            display.drawCentreString("WiFi: VBT-Tracker", SCREEN_W / 2, 138, 1);
-            display.drawCentreString("Pass: 12345678", SCREEN_W / 2, 156, 1);
+            display.drawCentreString("WiFi: VBT-Tracker", SCREEN_W / 2, 124, 1);
+            display.drawCentreString("Pass: 12345678", SCREEN_W / 2, 142, 1);
             display.setTextColor(COLOR_ACCENT, COLOR_CARD);
-            display.drawCentreString("http://vbt.local", SCREEN_W / 2, 176, 1);
+            display.drawCentreString("http://vbt.local", SCREEN_W / 2, 162, 1);
         }
         else
         {
             display.setTextColor(COLOR_MUTED, COLOR_CARD);
-            display.drawCentreString("PHONE WEB UI: OFF", SCREEN_W / 2, 120, 1);
-            display.drawCentreString("Wi-Fi radio powered off", SCREEN_W / 2, 148, 1);
-            display.drawCentreString("Max battery life", SCREEN_W / 2, 168, 1);
+            display.drawCentreString("PHONE WEB UI: OFF", SCREEN_W / 2, 108, 1);
+            display.drawCentreString("Wi-Fi radio powered off", SCREEN_W / 2, 134, 1);
+            display.drawCentreString("Max battery life", SCREEN_W / 2, 154, 1);
         }
 
+        // Button 1: Toggle Phone Wi-Fi
         const uint16_t btnBg = wifiOn ? COLOR_STOP_BG : COLOR_START_BTN;
         const uint16_t btnBorder = wifiOn ? COLOR_WARN : COLOR_GOOD;
-        display.fillRoundRect(14, 225, SCREEN_W - 28, 65, 10, btnBg);
-        display.drawRoundRect(14, 225, SCREEN_W - 28, 65, 10, btnBorder);
+        display.fillRoundRect(14, 194, SCREEN_W - 28, 50, 10, btnBg);
+        display.drawRoundRect(14, 194, SCREEN_W - 28, 50, 10, btnBorder);
         display.setTextColor(COLOR_TEXT, btnBg);
         display.setTextSize(2);
-        display.drawCentreString(wifiOn ? "WIFI OFF" : "WIFI ON", SCREEN_W / 2, 242, 1);
+        display.drawCentreString(wifiOn ? "WIFI OFF" : "WIFI ON", SCREEN_W / 2, 204, 1);
         display.setTextSize(1);
-        display.drawCentreString("TAP OR PRESS USR1", SCREEN_W / 2, 268, 1);
+        display.drawCentreString("TAP OR USR1", SCREEN_W / 2, 228, 1);
+
+        // Button 2: Deep Sleep (wake with USR1)
+        display.fillRoundRect(14, 254, SCREEN_W - 28, 50, 10, COLOR_STOP_BG);
+        display.drawRoundRect(14, 254, SCREEN_W - 28, 50, 10, COLOR_WARN);
+        display.setTextColor(COLOR_TEXT, COLOR_STOP_BG);
+        display.setTextSize(2);
+        display.drawCentreString("SLEEP", SCREEN_W / 2, 264, 1);
+        display.setTextSize(1);
+        display.drawCentreString("WAKE: PRESS USR1", SCREEN_W / 2, 288, 1);
     }
 
     void UiManager::renderCalibratingScreen()

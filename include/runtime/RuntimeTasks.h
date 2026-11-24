@@ -31,4 +31,7 @@ namespace vbt::runtime
 
     // Thread-safe copy of the latest completed set/activity result.
     vbt::ActivityOutput latestActivityResult();
+
+    // Stop the 500 Hz acquisition timer and power down the IMU before deep sleep.
+    void sleepImu();
 }

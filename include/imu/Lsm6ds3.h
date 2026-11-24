@@ -19,6 +19,7 @@ namespace vbt::imu
 
             bool begin(TwoWire& wire);
             bool readSample(vbt::RawImuSample& sample, uint64_t timestampUs, uint32_t sequence);
+            void sleep();
             bool isInitialized() const { return initialized_; }
             uint8_t whoAmI() const { return whoAmI_; }
 

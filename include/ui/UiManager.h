@@ -45,6 +45,7 @@ namespace vbt::ui
 
             void startWebUI();
             void stopWebUI();
+            void enterDeepSleep();
             bool isSettingsCard() const { return selectedCard_ == SETTINGS_CARD_INDEX; }
 
             static constexpr int MODE_COUNT = 5;
