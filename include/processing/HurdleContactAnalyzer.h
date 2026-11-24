@@ -30,6 +30,7 @@ namespace vbt::processing
 
         ActivityMode mode() const override { return ActivityMode::HurdleContact; }
         bool isEffortInProgress() const override { return phase_ != Phase::Idle; }
+        uint8_t phaseCode() const override { return static_cast<uint8_t>(phase_); }
 
         Phase phase() const { return phase_; }
         uint32_t contactCount() const { return contactCount_; }
