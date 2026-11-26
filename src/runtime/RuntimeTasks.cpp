@@ -179,7 +179,10 @@ namespace
                 traceLogger().freeze();
                 vbt::ActivityOutput finalOutput{};
                 pipeline.stopSession(finalOutput);
-                finalOutput.gates = gateReceiver().snapshot();
+                const uint64_t startTs = (finalOutput.mode == vbt::ActivityMode::BlockStart && finalOutput.block_start.valid)
+                    ? finalOutput.block_start.start_timestamp_us
+                    : 0;
+                finalOutput.gates = gateReceiver().snapshot(startTs);
                 gateReceiver().end();
                 publishActivityResult(finalOutput);
                 break;

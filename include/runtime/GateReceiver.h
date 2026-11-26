@@ -21,7 +21,8 @@ namespace vbt::runtime
         void begin();
         void end();
         void reset();
-        vbt::GateSplitMetrics snapshot() const;
+        // When startTimestampUs > 0 (Block Start), prepends movement t0 so Split 1 = 0 -> Gate 1.
+        vbt::GateSplitMetrics snapshot(uint64_t startTimestampUs = 0) const;
         bool isRunning() const { return running_; }
 
     private:

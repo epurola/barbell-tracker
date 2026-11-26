@@ -34,6 +34,7 @@ namespace vbt::processing
         {
             return phase_ == Phase::FirstStepsStance || phase_ == Phase::FirstStepsAerial;
         }
+        uint8_t phaseCode() const override { return static_cast<uint8_t>(phase_); }
 
         Phase phase() const { return phase_; }
         uint32_t capturedSteps() const { return stepCount_; }
@@ -59,6 +60,7 @@ namespace vbt::processing
         uint32_t stepCount_{0};
 
         uint64_t stationaryStartTimestampUs_{0};
+        uint64_t startTimestampUs_{0};
         uint64_t stepTouchdownTimestampUs_{0};
         uint64_t stepToeoffTimestampUs_{0};
 

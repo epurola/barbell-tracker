@@ -463,6 +463,10 @@ namespace vbt::ui
         {
             renderSprintResults(result);
         }
+        else if (result.mode == ActivityMode::BlockStart)
+        {
+            renderBlockStartResults(result);
+        }
         else
         {
             display.setTextColor(COLOR_ACCENT, COLOR_BG);
@@ -734,6 +738,88 @@ namespace vbt::ui
             display.setTextSize(2);
             snprintf(buf, sizeof(buf), "%.0f", result.sprint.last_contact_time_ms);
             display.drawCentreString(buf, 126, 220, 1);
+        }
+    }
+
+    void UiManager::renderBlockStartResults(const ActivityOutput& result)
+    {
+        char buf[36];
+        display.setTextColor(COLOR_ACCENT, COLOR_BG);
+        display.setTextSize(1);
+        snprintf(buf, sizeof(buf), "BLOCK %lu (%lu STEPS)",
+            static_cast<unsigned long>(result.set_number),
+            static_cast<unsigned long>(result.block_start.step_count));
+        display.drawCentreString(buf, SCREEN_W / 2, 10, 1);
+
+        if (!result.block_start.valid)
+        {
+            display.setTextColor(COLOR_WARN, COLOR_BG);
+            display.setTextSize(2);
+            display.drawCentreString("NO START", SCREEN_W / 2, 100, 1);
+            display.setTextSize(1);
+            display.drawCentreString("Hold SET 0.3s then go", SCREEN_W / 2, 140, 1);
+            return;
+        }
+
+        // Hero card: 0 -> Finish gate time if gates triggered, else Peak Drive Accel
+        display.fillRoundRect(8, 26, SCREEN_W - 16, 84, 8, COLOR_CARD);
+        display.setTextColor(COLOR_MUTED, COLOR_CARD);
+        display.setTextSize(1);
+        if (result.gates.count >= 2)
+        {
+            display.drawCentreString("0 -> FINISH (s)", SCREEN_W / 2, 32, 1);
+            display.setTextColor(COLOR_GOOD, COLOR_CARD);
+            display.setTextSize(3);
+            snprintf(buf, sizeof(buf), "%.3f", result.gates.total_seconds);
+            display.drawCentreString(buf, SCREEN_W / 2, 50, 1);
+            display.setTextColor(COLOR_TEXT, COLOR_CARD);
+            display.setTextSize(1);
+            snprintf(buf, sizeof(buf), "DRIVE:%.1fm/s2 SET:%.0fd",
+                result.block_start.peak_drive_accel_mps2, result.block_start.set_pitch_deg);
+            display.drawCentreString(buf, SCREEN_W / 2, 92, 1);
+        }
+        else
+        {
+            display.drawCentreString("PEAK DRIVE (m/s2)", SCREEN_W / 2, 32, 1);
+            display.setTextColor(COLOR_GOOD, COLOR_CARD);
+            display.setTextSize(3);
+            snprintf(buf, sizeof(buf), "%.1f", result.block_start.peak_drive_accel_mps2);
+            display.drawCentreString(buf, SCREEN_W / 2, 50, 1);
+            display.setTextColor(COLOR_TEXT, COLOR_CARD);
+            display.setTextSize(1);
+            snprintf(buf, sizeof(buf), "SET ANGLE: %.0f deg", result.block_start.set_pitch_deg);
+            display.drawCentreString(buf, SCREEN_W / 2, 92, 1);
+        }
+
+        // First 4 steps breakdown (2x2 mini-cards: S1..S4)
+        const uint32_t steps = result.block_start.step_count < 4 ? result.block_start.step_count : 4;
+        for (uint32_t i = 0; i < 4; ++i)
+        {
+            const int16_t x = (i % 2 == 0) ? 8 : 89;
+            const int16_t y = (i < 2) ? 120 : 190;
+            const int16_t cx = x + 37;
+            display.fillRoundRect(x, y, 75, 62, 6, COLOR_CARD);
+            display.setTextColor(COLOR_MUTED, COLOR_CARD);
+            display.setTextSize(1);
+            snprintf(buf, sizeof(buf), "STEP %lu", static_cast<unsigned long>(i + 1));
+            display.drawCentreString(buf, cx, y + 7, 1);
+            if (i < steps)
+            {
+                display.setTextColor(COLOR_TEXT, COLOR_CARD);
+                display.setTextSize(2);
+                snprintf(buf, sizeof(buf), "%.0f", result.block_start.step_contact_time_ms[i]);
+                display.drawCentreString(buf, cx, y + 23, 1);
+                display.setTextColor(COLOR_ACCENT, COLOR_CARD);
+                display.setTextSize(1);
+                snprintf(buf, sizeof(buf), "ms / %.0fd", result.block_start.step_pitch_deg[i]);
+                display.drawCentreString(buf, cx, y + 46, 1);
+            }
+            else
+            {
+                display.setTextColor(COLOR_MUTED, COLOR_CARD);
+                display.setTextSize(2);
+                display.drawCentreString("--", cx, y + 26, 1);
+            }
         }
     }
 }

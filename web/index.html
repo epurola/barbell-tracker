@@ -44,6 +44,7 @@
     <button class="btn-mode" onclick="cmd('jump')">Jump</button>
     <button class="btn-mode" onclick="cmd('hurdle')">Hurdle</button>
     <button class="btn-mode" onclick="cmd('sprint')">Sprint</button>
+    <button class="btn-mode" onclick="cmd('block')" style="grid-column:span 2">Block Start</button>
   </div>
   <div class="grid2">
     <button class="btn-stop" onclick="cmd('stop')">STOP SET</button>
@@ -166,6 +167,32 @@ function render(d){
         '<div class="stat"><div class="k">Run Time</div><div class="v">'+s.durS.toFixed(2)+' s</div></div>'+
         '<div class="stat"><div class="k">Total Steps</div><div class="v">'+s.n+'</div></div>'+
       '</div>'+gateHtml;
+  } else if(d.mode===4){
+    const blk=d.block, g=d.gates;
+    if(!blk||!blk.valid){ out.innerHTML='<div class="hero-val warn" style="font-size:32px">NO START</div><div class="sub">Hold SET still 0.3s, then explode out!</div>'; return; }
+    let gateHtml='';
+    if(g&&g.n>=2){
+      let grows='';
+      for(let i=0;i<g.splits.length;i++){
+        const lbl=(i===0)?'0 → Gate 1':'Gate '+i+' → Gate '+(i+1);
+        grows+='<tr><td>'+lbl+'</td><td><b>'+g.splits[i].toFixed(3)+' s</b></td></tr>';
+      }
+      gateHtml='<table class="tbl"><thead><tr><th>Block Split</th><th>Time</th></tr></thead><tbody>'+grows+
+        '<tr><td><b>0 → Finish</b></td><td class="good"><b>'+g.total.toFixed(3)+' s</b></td></tr></tbody></table>';
+    }
+    let srows='';
+    for(let i=0;i<blk.gct.length;i++){
+      srows+='<tr><td>S'+(i+1)+'</td><td><b>'+blk.gct[i].toFixed(0)+' ms</b></td><td>'+blk.ang[i].toFixed(0)+'°</td></tr>';
+    }
+    const hero=gateHtml
+      ? '<div class="hero-label">Block Start '+d.set+' — 0 → Finish</div><div class="hero-val">'+g.total.toFixed(3)+' <span style="font-size:18px">s</span></div>'
+      : '<div class="hero-label">Block Start '+d.set+' — Peak Drive</div><div class="hero-val">'+blk.peak.toFixed(1)+' <span style="font-size:18px">m/s²</span></div>';
+    out.innerHTML=hero+
+      '<div class="stats">'+
+        '<div class="stat"><div class="k">Peak Drive</div><div class="v good">'+blk.peak.toFixed(1)+' m/s²</div></div>'+
+        '<div class="stat"><div class="k">Set Angle</div><div class="v">'+blk.setPitch.toFixed(0)+'°</div></div>'+
+      '</div>'+gateHtml+
+      (srows?'<table class="tbl"><thead><tr><th>Step</th><th>GCT</th><th>Drive Angle</th></tr></thead><tbody>'+srows+'</tbody></table>':'');
   }
 }
 async function poll(){

@@ -90,6 +90,7 @@ namespace
         else if (a == "jump")    vbt::runtime::requestStartSession(vbt::ActivityMode::StandingJump, true);
         else if (a == "hurdle")  vbt::runtime::requestStartSession(vbt::ActivityMode::HurdleContact, true);
         else if (a == "sprint")  vbt::runtime::requestStartSession(vbt::ActivityMode::SprintContact, true);
+        else if (a == "block")   vbt::runtime::requestStartSession(vbt::ActivityMode::BlockStart, true);
         else if (a == "stop")    vbt::runtime::requestStopSession();
         else if (a == "next")    vbt::runtime::requestNextSet();
         else if (a == "idle")    vbt::runtime::requestModeSelect();
@@ -206,6 +207,25 @@ namespace
                     sprint["drift"] = res.sprint.contact_drift_ms;
                     sprint["last"]  = res.sprint.last_contact_time_ms;
                     sprint["durS"]  = sprintDurS;
+                    break;
+                }
+
+                case vbt::ActivityMode::BlockStart:
+                {
+                    JsonObject b = doc["block"].to<JsonObject>();
+                    b["valid"]    = res.block_start.valid;
+                    b["n"]        = res.block_start.step_count;
+                    b["peak"]     = res.block_start.peak_drive_accel_mps2;
+                    b["setPitch"] = res.block_start.set_pitch_deg;
+
+                    JsonArray gct = b["gct"].to<JsonArray>();
+                    JsonArray ang = b["ang"].to<JsonArray>();
+                    const uint32_t stepCount = res.block_start.step_count < 4 ? res.block_start.step_count : 4;
+                    for (uint32_t i = 0; i < stepCount; ++i)
+                    {
+                        gct.add(res.block_start.step_contact_time_ms[i]);
+                        ang.add(res.block_start.step_pitch_deg[i]);
+                    }
                     break;
                 }
 

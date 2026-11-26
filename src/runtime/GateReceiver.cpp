@@ -99,12 +99,30 @@ namespace vbt::runtime
         portEXIT_CRITICAL(&gateMux);
     }
 
-    vbt::GateSplitMetrics GateReceiver::snapshot() const
+    vbt::GateSplitMetrics GateReceiver::snapshot(uint64_t startTimestampUs) const
     {
-        vbt::GateSplitMetrics copy{};
+        vbt::GateSplitMetrics raw{};
         portENTER_CRITICAL(&gateMux);
-        copy = liveGates;
+        raw = liveGates;
         portEXIT_CRITICAL(&gateMux);
+
+        vbt::GateSplitMetrics copy{};
+        if (startTimestampUs > 0)
+        {
+            copy.timestamps_us[copy.count++] = startTimestampUs;
+            for (uint8_t i = 0; i < raw.count && copy.count < vbt::GateSplitMetrics::MAX_GATES; ++i)
+            {
+                if (raw.timestamps_us[i] > startTimestampUs)
+                {
+                    copy.timestamps_us[copy.count++] = raw.timestamps_us[i];
+                }
+            }
+            if (copy.count < 2) return {};
+        }
+        else
+        {
+            copy = raw;
+        }
 
         for (uint8_t i = 1; i < copy.count; ++i)
         {

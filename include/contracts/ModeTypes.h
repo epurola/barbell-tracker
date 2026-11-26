@@ -86,6 +86,7 @@ namespace vbt
     struct BlockStartMetrics
     {
         uint32_t step_count{0};
+        uint64_t start_timestamp_us{0};
         float step_contact_time_ms[4]{0.0f, 0.0f, 0.0f, 0.0f};
         float step_pitch_deg[4]{0.0f, 0.0f, 0.0f, 0.0f};
         float set_pitch_deg{0.0f};

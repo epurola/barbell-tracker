@@ -85,7 +85,12 @@ const MODES = {
        phases:['Idle','Stance','Aerial'],
        band:['transparent','rgba(74,222,128,0.16)','rgba(56,189,248,0.13)'],
        dot:['#94a3b8','#4ade80','#38bdf8'],
-       thresh:{ az:[{v:10.0,l:'TD +10.0',c:'#4ade80'},{v:-4.5,l:'ToeOff -4.5',c:'#38bdf8'}] } }
+       thresh:{ az:[{v:10.0,l:'TD +10.0',c:'#4ade80'},{v:-4.5,l:'ToeOff -4.5',c:'#38bdf8'}] } },
+  4: { name:'Block Start', sig:'az',
+       phases:['Idle','Set','Stance','Aerial'],
+       band:['transparent','rgba(250,204,21,0.13)','rgba(74,222,128,0.16)','rgba(56,189,248,0.13)'],
+       dot:['#94a3b8','#facc15','#4ade80','#38bdf8'],
+       thresh:{ az:[{v:8.0,l:'TD +8.0',c:'#4ade80'},{v:-3.5,l:'ToeOff -3.5',c:'#38bdf8'}] } }
 };
 
 const SIG_META = {
