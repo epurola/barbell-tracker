@@ -21,11 +21,12 @@ namespace vbt::processing
 
         static constexpr float BLOCK_CLEARANCE_ACCEL_MPS2 = 4.0f;
         static constexpr float STEP_TOUCHDOWN_ACCEL_MPS2 = 8.0f;
-        static constexpr float STEP_TOEOFF_ACCEL_MPS2 = -3.5f;
+        static constexpr float STEP_TOEOFF_ACCEL_MPS2 = -2.5f;
 
         static constexpr uint64_t SET_HOLD_DURATION_US = 300000;  // 300 ms stationary in blocks to lock set position
         static constexpr uint64_t MIN_STEP_CONTACT_US = 70000;    // 70 ms min contact time
-        static constexpr uint64_t MAX_STEP_CONTACT_US = 350000;   // 350 ms max block/first-step contact
+        static constexpr uint64_t MAX_BLOCK_PUSH_US = 650000;     // 650 ms max initial push from dead stop
+        static constexpr uint64_t MAX_STEP_CONTACT_US = 350000;   // 350 ms max follow-up step contact
         static constexpr uint64_t MIN_STEP_AERIAL_US = 40000;     // 40 ms min aerial phase
         static constexpr uint64_t MAX_STEP_AERIAL_US = 300000;    // 300 ms max aerial phase
 

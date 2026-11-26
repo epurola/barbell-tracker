@@ -123,7 +123,8 @@ namespace vbt::processing
     bool BlockStartAnalyzer::HandleFirstStepsStance(const KinematicSample& sample, bool stationary, BlockStartMetrics& output)
     {
         const uint64_t contactDurationUs = sample.timestamp_us - stepTouchdownTimestampUs_;
-        if (stationary || contactDurationUs > MAX_STEP_CONTACT_US)
+        const uint64_t maxContactUs = (stepCount_ == 0) ? MAX_BLOCK_PUSH_US : MAX_STEP_CONTACT_US;
+        if (stationary || contactDurationUs > maxContactUs)
         {
             return finalizeBlockStart(output);
         }
