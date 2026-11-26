@@ -455,6 +455,10 @@ namespace vbt::ui
         {
             renderJumpResults(result);
         }
+        else if (result.mode == ActivityMode::HurdleContact)
+        {
+            renderHurdleResults(result);
+        }
         else if (result.mode == ActivityMode::SprintContact)
         {
             renderSprintResults(result);
@@ -566,6 +570,78 @@ namespace vbt::ui
             snprintf(buf, sizeof(buf), "J%lu: %.1fcm", static_cast<unsigned long>(i + 1), result.jump.jump_heights_cm[i]);
             display.drawString(buf, col, row);
         }
+    }
+
+    void UiManager::renderHurdleResults(const ActivityOutput& result)
+    {
+        char buf[36];
+        display.setTextColor(COLOR_ACCENT, COLOR_BG);
+        display.setTextSize(1);
+        snprintf(buf, sizeof(buf), "HURDLES %lu (%lu HOPS)",
+            static_cast<unsigned long>(result.set_number),
+            static_cast<unsigned long>(result.hurdle.contact_number));
+        display.drawCentreString(buf, SCREEN_W / 2, 10, 1);
+
+        if (!result.hurdle.valid || result.hurdle.contact_number == 0)
+        {
+            display.setTextColor(COLOR_WARN, COLOR_BG);
+            display.setTextSize(2);
+            display.drawCentreString("0 HOPS", SCREEN_W / 2, 100, 1);
+            display.setTextSize(1);
+            display.drawCentreString("Hop over hurdles & land", SCREEN_W / 2, 140, 1);
+            return;
+        }
+
+        // Hero card: Best RSI + Mean RSI & Min GCT
+        display.fillRoundRect(8, 26, SCREEN_W - 16, 84, 8, COLOR_CARD);
+        display.setTextColor(COLOR_MUTED, COLOR_CARD);
+        display.setTextSize(1);
+        display.drawCentreString("BEST RSI (m/s)", SCREEN_W / 2, 32, 1);
+        display.setTextColor(COLOR_GOOD, COLOR_CARD);
+        display.setTextSize(3);
+        snprintf(buf, sizeof(buf), "%.2f", result.hurdle.best_rsi);
+        display.drawCentreString(buf, SCREEN_W / 2, 50, 1);
+        display.setTextColor(COLOR_TEXT, COLOR_CARD);
+        display.setTextSize(1);
+        snprintf(buf, sizeof(buf), "AVG:%.2f  MIN:%.0fms",
+            result.hurdle.mean_rsi, result.hurdle.min_contact_time_ms);
+        display.drawCentreString(buf, SCREEN_W / 2, 92, 1);
+
+        // 2x2 mini-cards: Mean GCT, Min GCT, Last Height, Last Flight
+        display.fillRoundRect(8, 120, 75, 62, 6, COLOR_CARD);
+        display.setTextColor(COLOR_MUTED, COLOR_CARD);
+        display.drawCentreString("AVG GCT", 45, 128, 1);
+        display.setTextColor(COLOR_TEXT, COLOR_CARD);
+        display.setTextSize(2);
+        snprintf(buf, sizeof(buf), "%.0f", result.hurdle.mean_contact_time_ms);
+        display.drawCentreString(buf, 45, 150, 1);
+
+        display.fillRoundRect(89, 120, 75, 62, 6, COLOR_CARD);
+        display.setTextColor(COLOR_MUTED, COLOR_CARD);
+        display.setTextSize(1);
+        display.drawCentreString("MIN GCT", 126, 128, 1);
+        display.setTextColor(COLOR_GOOD, COLOR_CARD);
+        display.setTextSize(2);
+        snprintf(buf, sizeof(buf), "%.0f", result.hurdle.min_contact_time_ms);
+        display.drawCentreString(buf, 126, 150, 1);
+
+        display.fillRoundRect(8, 190, 75, 62, 6, COLOR_CARD);
+        display.setTextColor(COLOR_MUTED, COLOR_CARD);
+        display.setTextSize(1);
+        display.drawCentreString("HEIGHT cm", 45, 198, 1);
+        display.setTextColor(COLOR_TEXT, COLOR_CARD);
+        display.setTextSize(2);
+        snprintf(buf, sizeof(buf), "%.1f", result.hurdle.jump_height_cm);
+        display.drawCentreString(buf, 45, 220, 1);
+
+        display.fillRoundRect(89, 190, 75, 62, 6, COLOR_CARD);
+        display.setTextColor(COLOR_MUTED, COLOR_CARD);
+        display.setTextSize(1);
+        display.drawCentreString("FLIGHT ms", 126, 198, 1);
+        display.setTextColor(COLOR_TEXT, COLOR_CARD);
+        display.setTextSize(2);
+        snprintf(buf, sizeof(buf), "%.0f", result.hurdle.flight_time_ms);
+        display.drawCentreString(buf, 126, 220, 1);
     }
 
     void UiManager::renderSprintResults(const ActivityOutput& result)

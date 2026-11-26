@@ -41,6 +41,7 @@ namespace vbt::ui
             void renderResultsScreen(const ActivityOutput& result);
             void renderBarbellResults(const ActivityOutput& result);
             void renderJumpResults(const ActivityOutput& result);
+            void renderHurdleResults(const ActivityOutput& result);
             void renderSprintResults(const ActivityOutput& result);
 
             void startWebUI();

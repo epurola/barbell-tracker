@@ -88,6 +88,7 @@ namespace
         const String a = server.arg("a");
         if (a == "barbell")      vbt::runtime::requestStartSession(vbt::ActivityMode::BarbellVbt, true);
         else if (a == "jump")    vbt::runtime::requestStartSession(vbt::ActivityMode::StandingJump, true);
+        else if (a == "hurdle")  vbt::runtime::requestStartSession(vbt::ActivityMode::HurdleContact, true);
         else if (a == "sprint")  vbt::runtime::requestStartSession(vbt::ActivityMode::SprintContact, true);
         else if (a == "stop")    vbt::runtime::requestStopSession();
         else if (a == "next")    vbt::runtime::requestNextSet();
@@ -159,6 +160,31 @@ namespace
                     for (uint32_t i = 0; i < jumpCount; ++i)
                     {
                         jumpList.add(res.jump.jump_heights_cm[i]);
+                    }
+                    break;
+                }
+
+                case vbt::ActivityMode::HurdleContact:
+                {
+                    JsonObject h = doc["hurdle"].to<JsonObject>();
+                    h["valid"]   = res.hurdle.valid;
+                    h["n"]       = res.hurdle.contact_number;
+                    h["bestRsi"] = res.hurdle.best_rsi;
+                    h["meanRsi"] = res.hurdle.mean_rsi;
+                    h["minGct"]  = res.hurdle.min_contact_time_ms;
+                    h["meanGct"] = res.hurdle.mean_contact_time_ms;
+                    h["height"]  = res.hurdle.jump_height_cm;
+                    h["flt"]     = res.hurdle.flight_time_ms;
+
+                    JsonArray gctList = h["gctList"].to<JsonArray>();
+                    JsonArray rsiList = h["rsiList"].to<JsonArray>();
+                    const uint32_t hopCount = res.hurdle.contact_number < vbt::HurdleContactMetrics::MAX_SET_HURDLES
+                        ? res.hurdle.contact_number
+                        : vbt::HurdleContactMetrics::MAX_SET_HURDLES;
+                    for (uint32_t i = 0; i < hopCount; ++i)
+                    {
+                        gctList.add(res.hurdle.hop_contact_time_ms[i]);
+                        rsiList.add(res.hurdle.hop_rsi[i]);
                     }
                     break;
                 }
